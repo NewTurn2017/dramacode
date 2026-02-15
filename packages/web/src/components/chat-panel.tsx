@@ -56,6 +56,7 @@ export function ChatPanel(props: { sessionId: string; visible: boolean; onTitleC
         }
       } finally {
         setStreamText("")
+        requestAnimationFrame(() => inputRef?.focus())
       }
     }).catch(() => undefined)
   }
@@ -126,10 +127,9 @@ export function ChatPanel(props: { sessionId: string; visible: boolean; onTitleC
           await api.session.updateTitle(props.sessionId, label)
           props.onTitleChange?.(label)
         }
-
-        inputRef?.focus()
       } finally {
         setStreamText("")
+        requestAnimationFrame(() => inputRef?.focus())
       }
     }).catch(() => undefined)
   }
