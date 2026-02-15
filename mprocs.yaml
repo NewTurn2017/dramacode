@@ -1,7 +1,7 @@
 procs:
   server:
-    cmd: ["bun", "run", "dev"]
-    cwd: "."
+    cmd: ["bun", "run", "src/index.ts", "serve", "--port", "4097"]
+    cwd: "packages/dramacode"
   web:
     cmd: ["bunx", "vite"]
     cwd: "packages/web"
