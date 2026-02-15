@@ -95,9 +95,35 @@ export const PlotPointTable = sqliteTable(
     description: text().notNull(),
     resolved: integer({ mode: "boolean" }).default(false),
     resolved_episode_id: text().references(() => EpisodeTable.id, { onDelete: "set null" }),
+    linked_plot_id: text(),
     ...Timestamps,
   },
   (table) => [index("plot_point_drama_idx").on(table.drama_id), index("plot_point_episode_idx").on(table.episode_id)],
+)
+
+export const CharacterArcTable = sqliteTable(
+  "character_arc",
+  {
+    id: text().primaryKey(),
+    drama_id: text()
+      .notNull()
+      .references(() => DramaTable.id, { onDelete: "cascade" }),
+    character_id: text()
+      .notNull()
+      .references(() => CharacterTable.id, { onDelete: "cascade" }),
+    episode_id: text()
+      .notNull()
+      .references(() => EpisodeTable.id, { onDelete: "cascade" }),
+    emotion: text().notNull(), // 희망, 절망, 분노, 기쁨, 공포, 슬픔 etc
+    intensity: integer().notNull(), // -5 to +5
+    description: text(),
+    ...Timestamps,
+  },
+  (table) => [
+    index("character_arc_drama_idx").on(table.drama_id),
+    index("character_arc_character_idx").on(table.character_id),
+    index("character_arc_episode_idx").on(table.episode_id),
+  ],
 )
 
 export const SceneCharacterTable = sqliteTable(

@@ -106,6 +106,19 @@ export type PlotPoint = {
   description: string
   resolved: boolean | null
   resolved_episode_id: string | null
+  linked_plot_id: string | null
+  time_created: number
+  time_updated: number
+}
+
+export type CharacterArc = {
+  id: string
+  drama_id: string
+  character_id: string
+  episode_id: string
+  emotion: string
+  intensity: number
+  description: string | null
   time_created: number
   time_updated: number
 }
@@ -148,6 +161,7 @@ export const api = {
     episodes: (id: string) => get<Episode[]>(`/drama/${id}/episodes`),
     scenes: (id: string) => get<Scene[]>(`/drama/${id}/scenes`),
     world: (id: string) => get<World[]>(`/drama/${id}/world`),
+    arcs: (id: string) => get<CharacterArc[]>(`/drama/${id}/arcs`),
     plotPoints: (id: string) => get<PlotPoint[]>(`/drama/${id}/plot-points`),
   },
   session: {

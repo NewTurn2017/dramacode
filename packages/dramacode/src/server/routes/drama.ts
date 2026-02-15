@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import { Drama, Episode, Scene, Character, World, PlotPoint } from "../../drama"
+import { Drama, Episode, Scene, Character, CharacterArc, World, PlotPoint } from "../../drama"
 
 export function DramaRoutes() {
   return new Hono()
@@ -39,6 +39,7 @@ export function DramaRoutes() {
       const body = await c.req.json<Omit<Parameters<typeof World.create>[0], "drama_id">>()
       return c.json(World.create({ drama_id: c.req.param("id"), ...body }), 201)
     })
+    .get("/:id/arcs", (c) => c.json(CharacterArc.listByDrama(c.req.param("id"))))
     .get("/:id/plot-points", (c) => c.json(PlotPoint.listByDrama(c.req.param("id"))))
     .get("/:id/plot-points/unresolved", (c) => c.json(PlotPoint.listUnresolved(c.req.param("id"))))
     .post("/:id/plot-points", async (c) => {

@@ -1,6 +1,6 @@
 import { tool } from "ai"
 import { z } from "zod"
-import { Drama, Episode, Character, World, PlotPoint, Scene } from "../drama"
+import { Drama, Episode, Character, CharacterArc, World, PlotPoint, Scene } from "../drama"
 import { Rag } from "../rag"
 import { WriterStyle } from "../writer"
 import { Session } from "../session"
@@ -367,6 +367,7 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
         type: z.enum(["setup", "conflict", "twist", "climax", "resolution", "foreshadowing"]).describe("유형"),
         description: z.string().describe("설명"),
         episode_id: z.string().optional().describe("관련 에피소드 ID"),
+        linked_plot_id: z.string().optional().describe("연결된 플롯 포인트 ID (복선→회수 등)"),
       }),
       execute: async (params) => {
         const did = requireDrama()
@@ -380,6 +381,58 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
         EventBus.emit(did, "plot")
         log.info("tool.create_plot_point", { id: point.id, type: point.type })
         return `플롯 포인트 [${point.type}] "${point.description.slice(0, 40)}..." 이(가) 기록되었습니다.`
+      },
+    }),
+
+    save_character_arc: tool({
+      description:
+        "캐릭터의 에피소드별 감정 상태를 기록합니다. 스토리 전개에 따라 캐릭터의 감정 변화를 추적할 때 사용하세요. intensity는 -5(최저)~+5(최고) 사이 값입니다.",
+      inputSchema: z.object({
+        character_name: z.string().describe("캐릭터 이름"),
+        episode_id: z.string().describe("에피소드 ID"),
+        emotion: z.string().describe("감정 라벨 (예: 희망, 절망, 분노, 기쁨, 공포, 슬픔, 각성)"),
+        intensity: z.number().min(-5).max(5).describe("감정 강도 (-5 최저 ~ +5 최고)"),
+        description: z.string().optional().describe("이 감정 상태의 이유/맥락"),
+      }),
+      execute: async (params) => {
+        const did = requireDrama()
+        const character = Character.findByName(did, params.character_name)
+        if (!character)
+          return `캐릭터 "${params.character_name}"을(를) 찾을 수 없습니다. 먼저 save_character로 등록해주세요.`
+        const arc = CharacterArc.create({
+          drama_id: did,
+          character_id: character.id,
+          episode_id: params.episode_id,
+          emotion: params.emotion,
+          intensity: params.intensity,
+          description: params.description,
+        })
+        EventBus.emit(did, "arc")
+        log.info("tool.save_character_arc", { id: arc.id, character: params.character_name, emotion: arc.emotion })
+        return `${params.character_name}의 감정 아크 기록: ${arc.emotion} (강도: ${arc.intensity > 0 ? "+" : ""}${arc.intensity})`
+      },
+    }),
+
+    resolve_plot_point: tool({
+      description:
+        "복선이나 플롯 포인트를 해결됨으로 표시합니다. 복선이 회수되거나 갈등이 해소될 때 사용하세요. 해결하는 에피소드와 연결된 플롯 포인트를 지정할 수 있습니다.",
+      inputSchema: z.object({
+        plot_point_id: z.string().describe("해결할 플롯 포인트 ID"),
+        resolved_episode_id: z.string().optional().describe("해결되는 에피소드 ID"),
+        linked_plot_id: z.string().optional().describe("연결된 플롯 포인트 ID (복선→회수 연결)"),
+      }),
+      execute: async (params) => {
+        const did = requireDrama()
+        const point = PlotPoint.get(params.plot_point_id)
+        if (point.drama_id !== did) throw new Error("현재 드라마에 속한 플롯 포인트만 해결할 수 있습니다.")
+        const updated = PlotPoint.update(params.plot_point_id, {
+          resolved: true,
+          resolved_episode_id: params.resolved_episode_id,
+          linked_plot_id: params.linked_plot_id,
+        })
+        EventBus.emit(did, "plot")
+        log.info("tool.resolve_plot_point", { id: updated.id })
+        return `플롯 포인트 [${updated.type}] "${updated.description.slice(0, 40)}..." 이(가) 해결됨으로 표시되었습니다.`
       },
     }),
 

@@ -1,10 +1,12 @@
 import { createSignal, createResource, createEffect, For, Show, Switch, Match, onCleanup } from "solid-js"
 import { useParams, A } from "@solidjs/router"
-import { api, type Session, type Scene, type ScenePrompt } from "@/lib/api"
+import { api, type Session, type Scene, type ScenePrompt, type CharacterArc } from "@/lib/api"
 import { ChatPanel } from "@/components/chat-panel"
 import { ConfirmModal } from "@/components/confirm-modal"
 import { ThinkingIndicator } from "@/components/thinking"
 import { RelationshipGraph } from "@/components/relationship-graph"
+import { ArcChart } from "@/components/arc-chart"
+import { PlotTimeline } from "@/components/plot-timeline"
 
 type OpenTab = { id: string; label: string }
 type Section = "characters" | "episodes" | "scenes" | "world" | "plot"
@@ -79,6 +81,7 @@ export default function DramaDetail() {
   const [episodes, { refetch: refetchEps }] = createResource(dramaId, api.drama.episodes)
   const [scenes, { refetch: refetchScenes }] = createResource(dramaId, api.drama.scenes)
   const [world, { refetch: refetchWorld }] = createResource(dramaId, api.drama.world)
+  const [arcs, { refetch: refetchArcs }] = createResource(dramaId, api.drama.arcs)
   const [plotPoints, { refetch: refetchPlot }] = createResource(dramaId, api.drama.plotPoints)
 
   let sse: EventSource | undefined
@@ -101,6 +104,7 @@ export default function DramaDetail() {
       if (type === "scene") refetchScenes()
       if (type === "world") refetchWorld()
       if (type === "plot") refetchPlot()
+      if (type === "arc") refetchArcs()
       if (type === "drama") {
       }
     }
@@ -114,6 +118,7 @@ export default function DramaDetail() {
           refetchScenes()
           refetchWorld()
           refetchPlot()
+          refetchArcs()
         }, 5000)
       }
       setTimeout(connectSSE, 3000)
@@ -515,6 +520,28 @@ export default function DramaDetail() {
                       </div>
                       <div class="px-3 pb-3">
                         <RelationshipGraph characters={characters() ?? []} />
+                      </div>
+                    </div>
+                  </Show>
+
+                  <Show when={(arcs() ?? []).length > 0}>
+                    <div class="border-b border-border/50">
+                      <div class="px-4 py-2.5 flex items-center gap-2">
+                        <span class="text-sm font-medium">감정 아크</span>
+                      </div>
+                      <div class="px-3 pb-3">
+                        <ArcChart arcs={arcs() ?? []} characters={characters() ?? []} episodes={episodes() ?? []} />
+                      </div>
+                    </div>
+                  </Show>
+
+                  <Show when={(plotPoints() ?? []).length > 0}>
+                    <div class="border-b border-border/50">
+                      <div class="px-4 py-2.5 flex items-center gap-2">
+                        <span class="text-sm font-medium">플롯 타임라인</span>
+                      </div>
+                      <div class="px-3 pb-3">
+                        <PlotTimeline plotPoints={plotPoints() ?? []} episodes={episodes() ?? []} />
                       </div>
                     </div>
                   </Show>

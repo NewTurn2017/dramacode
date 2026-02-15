@@ -5,6 +5,7 @@ import {
   EpisodeTable,
   SceneTable,
   CharacterTable,
+  CharacterArcTable,
   WorldTable,
   PlotPointTable,
   SceneCharacterTable,
@@ -375,6 +376,76 @@ export namespace World {
   }
 }
 
+export namespace CharacterArc {
+  export type Info = typeof CharacterArcTable.$inferSelect
+
+  export function create(input: {
+    drama_id: string
+    character_id: string
+    episode_id: string
+    emotion: string
+    intensity: number
+    description?: string
+  }): Info {
+    const id = ulid()
+    const now = Date.now()
+    const row = Database.use((db) =>
+      db
+        .insert(CharacterArcTable)
+        .values({ id, ...input, time_created: now, time_updated: now })
+        .returning()
+        .get(),
+    )
+    log.info("character_arc.created", { id: row.id, character_id: input.character_id })
+    return row
+  }
+
+  export function listByDrama(dramaID: string, limit = 500): Info[] {
+    return Database.use((db) =>
+      db
+        .select()
+        .from(CharacterArcTable)
+        .where(eq(CharacterArcTable.drama_id, dramaID))
+        .orderBy(CharacterArcTable.time_created)
+        .limit(limit)
+        .all(),
+    )
+  }
+
+  export function listByCharacter(characterID: string, limit = 100): Info[] {
+    return Database.use((db) =>
+      db
+        .select()
+        .from(CharacterArcTable)
+        .where(eq(CharacterArcTable.character_id, characterID))
+        .orderBy(CharacterArcTable.time_created)
+        .limit(limit)
+        .all(),
+    )
+  }
+
+  export function remove(id: string) {
+    Database.use((db) => db.delete(CharacterArcTable).where(eq(CharacterArcTable.id, id)).run())
+    log.info("character_arc.removed", { id })
+  }
+
+  export function update(
+    id: string,
+    input: Partial<Omit<Info, "id" | "drama_id" | "character_id" | "episode_id" | "time_created" | "time_updated">>,
+  ): Info {
+    const row = Database.use((db) =>
+      db
+        .update(CharacterArcTable)
+        .set({ ...input, time_updated: Date.now() })
+        .where(eq(CharacterArcTable.id, id))
+        .returning()
+        .get(),
+    )
+    if (!row) throw new NotFoundError({ message: `character arc not found: ${id}` })
+    return row
+  }
+}
+
 export namespace PlotPoint {
   export type Info = typeof PlotPointTable.$inferSelect
 
@@ -385,6 +456,7 @@ export namespace PlotPoint {
     description: string
     resolved?: boolean
     resolved_episode_id?: string
+    linked_plot_id?: string
   }): Info {
     const id = ulid()
     const now = Date.now()
