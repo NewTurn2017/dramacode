@@ -142,6 +142,12 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),
       }),
+    greet: (sessionId: string) =>
+      fetch(`${BASE}/chat/${sessionId}/greet`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      }),
   },
   writer: {
     list: () => get<WriterStyle[]>("/writer"),

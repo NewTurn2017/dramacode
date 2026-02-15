@@ -68,6 +68,30 @@ export namespace Chat {
     return { message: msg, stream: result }
   }
 
+  export async function greet(input: { session_id: string; model?: string }) {
+    const openai = await provider()
+    const model = input.model ?? "gpt-5.2"
+    const session = Session.get(input.session_id)
+    const system = DramaPrompt.buildContext(session.drama_id)
+
+    return streamText({
+      model: openai(model),
+      messages: [{ role: "user", content: DramaPrompt.greetingPrompt }],
+      tools: dramaTools({ session_id: input.session_id, drama_id: session.drama_id }),
+      stopWhen: stepCountIs(3),
+      providerOptions: { openai: { instructions: system, store: false } },
+      async onFinish({ text }) {
+        if (text.trim()) {
+          Session.addMessage({
+            session_id: input.session_id,
+            role: "assistant",
+            content: text,
+          })
+        }
+      },
+    })
+  }
+
   export async function stream(input: { session_id: string; content: string; model?: string }) {
     const openai = await provider()
     const model = input.model ?? "gpt-5.2"

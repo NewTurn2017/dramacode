@@ -83,30 +83,40 @@ body {
   background-color: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .prose {
-  line-height: 1.7;
+  line-height: 1.8;
+  font-size: 15px;
 }
 
 .prose h1,
 .prose h2,
 .prose h3,
 .prose h4 {
-  font-weight: 600;
-  margin-top: 1.2em;
+  font-weight: 700;
+  margin-top: 1.4em;
   margin-bottom: 0.5em;
-  color: var(--color-text);
+  letter-spacing: -0.01em;
 }
 
 .prose h1 {
-  font-size: 1.25rem;
+  font-size: 1.4rem;
+  color: #e4e4ef;
 }
 .prose h2 {
-  font-size: 1.125rem;
+  font-size: 1.2rem;
+  color: var(--color-accent);
 }
 .prose h3 {
-  font-size: 1rem;
+  font-size: 1.05rem;
+  color: #a8a8c0;
+}
+.prose h4 {
+  font-size: 0.95rem;
+  color: var(--color-text-dim);
 }
 
 .prose h1:first-child,
@@ -141,7 +151,12 @@ body {
 }
 
 .prose li {
-  margin: 0.25em 0;
+  margin: 0.3em 0;
+}
+
+.prose ol > li::marker {
+  color: var(--color-accent);
+  font-weight: 600;
 }
 
 .prose li > ul,
@@ -151,11 +166,12 @@ body {
 
 .prose strong {
   font-weight: 600;
-  color: var(--color-text);
+  color: #fff;
 }
 
 .prose em {
   font-style: italic;
+  color: var(--color-text-dim);
 }
 
 .prose code {

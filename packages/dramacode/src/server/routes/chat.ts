@@ -4,6 +4,20 @@ import { Chat } from "../../chat"
 
 export function ChatRoutes() {
   return new Hono()
+    .post("/:sessionID/greet", async (c) => {
+      const sessionID = c.req.param("sessionID")
+
+      const result = await Chat.greet({ session_id: sessionID })
+
+      c.header("Content-Type", "text/plain; charset=utf-8")
+      c.header("Transfer-Encoding", "chunked")
+
+      return stream(c, async (s) => {
+        for await (const chunk of result.textStream) {
+          await s.write(chunk)
+        }
+      })
+    })
     .post("/:sessionID", async (c) => {
       const sessionID = c.req.param("sessionID")
       const body = await c.req.json<{

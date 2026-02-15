@@ -27,11 +27,44 @@ export function ChatPanel(props: { sessionId: string; visible: boolean; onTitleC
     if (props.visible) requestAnimationFrame(() => scrollToBottom())
   })
 
+  async function runGreet() {
+    setStreaming(true)
+    setStreamText("")
+    const res = await api.chat.greet(props.sessionId)
+    if (!res.ok || !res.body) {
+      setStreaming(false)
+      return
+    }
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let full = ""
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      full += decoder.decode(value, { stream: true })
+      setStreamText(full)
+    }
+    setStreamText("")
+    setStreaming(false)
+    if (full.trim()) {
+      setMessages([
+        {
+          id: `greet-${Date.now()}`,
+          session_id: props.sessionId,
+          role: "assistant",
+          content: full,
+          time_created: Date.now(),
+        },
+      ])
+    }
+  }
+
   onMount(async () => {
     const msgs = await api.session.messages(props.sessionId)
     setMessages(msgs)
     setLoaded(true)
     requestAnimationFrame(() => scrollToBottom(true))
+    if (msgs.length === 0) runGreet()
   })
 
   createEffect(() => {
