@@ -1,0 +1,23 @@
+{
+  "name": "dramacode",
+  "description": "AI-powered drama screenwriting tool",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.2.19",
+  "scripts": {
+    "dev": "bun run --cwd packages/dramacode src/index.ts",
+    "typecheck": "bun tsc --noEmit",
+    "test": "echo 'do-not-run-tests-from-root' && exit 1"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "devDependencies": {
+    "@tsconfig/bun": "1.0.9",
+    "typescript": "5.8.2"
+  },
+  "prettier": {
+    "semi": false,
+    "printWidth": 120
+  }
+}
