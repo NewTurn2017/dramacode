@@ -7,6 +7,7 @@ import { dramaTools } from "./tools"
 import { Session } from "../session"
 import { Log } from "../util/log"
 import { compactIfNeeded } from "./compaction"
+import { Rag } from "../rag"
 
 const log = Log.create({ service: "chat" })
 
@@ -84,7 +85,18 @@ export namespace Chat {
       openai,
     })
     const history = Session.messages(input.session_id)
-    const system = DramaPrompt.buildContext(session.drama_id)
+    const base = DramaPrompt.buildContext(session.drama_id)
+    const rag = session.drama_id
+      ? await Rag.buildContext({ query: input.content, drama_id: session.drama_id }).catch((err) => {
+          log.error("chat.rag_context_failed", {
+            session_id: input.session_id,
+            drama_id: session.drama_id,
+            error: err instanceof Error ? err.message : String(err),
+          })
+          return ""
+        })
+      : ""
+    const system = rag ? `${base}\n\n${rag}` : base
     const tools = dramaTools({ session_id: input.session_id, drama_id: session.drama_id })
 
     log.info("chat.send", {
@@ -159,7 +171,18 @@ export namespace Chat {
       openai,
     })
     const history = Session.messages(input.session_id)
-    const system = DramaPrompt.buildContext(session.drama_id)
+    const base = DramaPrompt.buildContext(session.drama_id)
+    const rag = session.drama_id
+      ? await Rag.buildContext({ query: input.content, drama_id: session.drama_id }).catch((err) => {
+          log.error("chat.rag_context_failed", {
+            session_id: input.session_id,
+            drama_id: session.drama_id,
+            error: err instanceof Error ? err.message : String(err),
+          })
+          return ""
+        })
+      : ""
+    const system = rag ? `${base}\n\n${rag}` : base
     const tools = dramaTools({ session_id: input.session_id, drama_id: session.drama_id })
 
     return streamText({

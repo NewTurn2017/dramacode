@@ -1,4 +1,5 @@
 import { Database as BunDatabase } from "bun:sqlite"
+import * as sqliteVec from "sqlite-vec"
 import { drizzle, type SQLiteBunDatabase } from "drizzle-orm/bun-sqlite"
 import { migrate } from "drizzle-orm/bun-sqlite/migrator"
 import { type SQLiteTransaction } from "drizzle-orm/sqlite-core"
@@ -12,6 +13,7 @@ import z from "zod"
 import path from "path"
 import { readFileSync, readdirSync } from "fs"
 import * as schema from "./schema"
+import { Rag } from "../rag"
 
 export const NotFoundError = NamedError.create(
   "NotFoundError",
@@ -30,6 +32,21 @@ export namespace Database {
   type Client = SQLiteBunDatabase<Schema>
 
   type Journal = { sql: string; timestamp: number }[]
+  let raw: BunDatabase | undefined
+
+  function customSQLite() {
+    const paths = ["/opt/homebrew/opt/sqlite/lib/libsqlite3.dylib", "/usr/local/opt/sqlite/lib/libsqlite3.dylib"]
+    for (const file of paths) {
+      try {
+        BunDatabase.setCustomSQLite(file)
+        log.info("custom sqlite loaded", { file })
+        return
+      } catch {
+        continue
+      }
+    }
+    log.warn("custom sqlite not configured")
+  }
 
   function time(tag: string) {
     const match = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/.exec(tag)
@@ -66,7 +83,10 @@ export namespace Database {
   export const Client = lazy(() => {
     log.info("opening database", { path: Database.Path })
 
+    customSQLite()
     const sqlite = new BunDatabase(Database.Path, { create: true })
+    sqliteVec.load(sqlite)
+    raw = sqlite
 
     sqlite.run("PRAGMA journal_mode = WAL")
     sqlite.run("PRAGMA synchronous = NORMAL")
@@ -83,8 +103,16 @@ export namespace Database {
       migrate(db, entries)
     }
 
+    Rag.init()
+
     return db
   })
+
+  export function sqlite() {
+    if (!raw) Client()
+    if (!raw) throw new Error("database not initialized")
+    return raw
+  }
 
   export type TxOrDb = Transaction | Client
 

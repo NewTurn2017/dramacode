@@ -1,6 +1,7 @@
 import { tool } from "ai"
 import { z } from "zod"
 import { Drama, Episode, Character, World, PlotPoint, Scene } from "../drama"
+import { Rag } from "../rag"
 import { WriterStyle } from "../writer"
 import { Session } from "../session"
 import { Log } from "../util/log"
@@ -82,6 +83,13 @@ function buildScenePrompt(input: { scene: Scene.Info; drama: Drama.Info }): {
   }
 }
 
+function ragError(action: string, err: unknown, extra?: Record<string, unknown>) {
+  log.error(action, {
+    ...extra,
+    error: err instanceof Error ? err.message : String(err),
+  })
+}
+
 export function dramaTools(input: { session_id: string; drama_id?: string | null }) {
   let dramaID = input.drama_id ?? null
 
@@ -106,6 +114,12 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
         const drama = Drama.create(params)
         dramaID = drama.id
         Session.linkDrama(input.session_id, drama.id)
+        Rag.index({
+          entity_id: drama.id,
+          entity_type: "drama",
+          drama_id: drama.id,
+          content: Rag.serialize.drama(drama),
+        }).catch((err) => ragError("tool.rag.index.create_drama", err, { drama_id: drama.id }))
         log.info("tool.create_drama", { drama_id: drama.id, title: drama.title })
         return `드라마 "${drama.title}" 프로젝트가 생성되었습니다. (ID: ${drama.id})`
       },
@@ -126,14 +140,43 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
       execute: async (params) => {
         const did = requireDrama()
         const existing = Character.findByName(did, params.name)
+        const probe = [
+          `캐릭터: ${params.name}${params.role ? ` (${params.role})` : ""}`,
+          params.occupation ? `직업: ${params.occupation}` : "",
+          params.personality ? `성격: ${params.personality}` : "",
+          params.backstory ? `배경: ${params.backstory}` : "",
+          params.arc ? `아크: ${params.arc}` : "",
+        ]
+          .filter(Boolean)
+          .join(" - ")
+        const warning = await Rag.detectContradiction({
+          entity_type: "character",
+          content: probe,
+          drama_id: did,
+        })
         if (existing) {
           const updated = Character.update(existing.id, params)
+          Rag.index({
+            entity_id: updated.id,
+            entity_type: "character",
+            drama_id: did,
+            content: Rag.serialize.character(updated),
+          }).catch((err) => ragError("tool.rag.index.update_character", err, { entity_id: updated.id, drama_id: did }))
+          const conflict = warning.conflicts.find((item) => item.entity_id !== existing.id)
+          const message = warning.warning && conflict ? `\n${warning.warning}` : ""
           log.info("tool.update_character", { id: updated.id, name: updated.name })
-          return `캐릭터 "${updated.name}" 정보가 업데이트되었습니다.`
+          return `캐릭터 "${updated.name}" 정보가 업데이트되었습니다.${message}`
         }
         const created = Character.create({ drama_id: did, ...params })
+        Rag.index({
+          entity_id: created.id,
+          entity_type: "character",
+          drama_id: did,
+          content: Rag.serialize.character(created),
+        }).catch((err) => ragError("tool.rag.index.create_character", err, { entity_id: created.id, drama_id: did }))
+        const message = warning.warning ? `\n${warning.warning}` : ""
         log.info("tool.create_character", { id: created.id, name: created.name })
-        return `캐릭터 "${created.name}"이(가) 등록되었습니다.`
+        return `캐릭터 "${created.name}"이(가) 등록되었습니다.${message}`
       },
     }),
 
@@ -147,6 +190,12 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
       execute: async (params) => {
         const did = requireDrama()
         const ep = Episode.create({ drama_id: did, ...params })
+        Rag.index({
+          entity_id: ep.id,
+          entity_type: "episode",
+          drama_id: did,
+          content: Rag.serialize.episode(ep),
+        }).catch((err) => ragError("tool.rag.index.create_episode", err, { entity_id: ep.id, drama_id: did }))
         log.info("tool.create_episode", { id: ep.id, number: ep.number })
         return `${ep.number}화 "${ep.title}" 에피소드가 생성되었습니다. (ID: ${ep.id})`
       },
@@ -215,6 +264,12 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
         const scene = Scene.create(params)
         const prompt = buildScenePrompt({ scene, drama: Drama.get(did) })
         const updated = Scene.update(scene.id, { image_prompt: prompt })
+        Rag.index({
+          entity_id: updated.id,
+          entity_type: "scene",
+          drama_id: did,
+          content: Rag.serialize.scene(updated),
+        }).catch((err) => ragError("tool.rag.index.create_scene", err, { entity_id: updated.id, drama_id: did }))
         log.info("tool.create_scene", { id: scene.id, episode_id: params.episode_id })
         return `S#${updated.number} 장면이 생성되었습니다. (장소: ${updated.location ?? "미정"})`
       },
@@ -235,6 +290,12 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
       execute: async (params) => {
         const did = requireDrama()
         const drama = Drama.update(did, params)
+        Rag.index({
+          entity_id: drama.id,
+          entity_type: "drama",
+          drama_id: did,
+          content: Rag.serialize.drama(drama),
+        }).catch((err) => ragError("tool.rag.index.update_drama", err, { drama_id: did }))
         log.info("tool.update_drama", { drama_id: drama.id })
         return `드라마 메타데이터가 업데이트되었습니다. (장르: ${drama.genre ?? "미정"}, 톤: ${drama.tone ?? "미정"})`
       },
@@ -267,9 +328,27 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
       }),
       execute: async (params) => {
         const did = requireDrama()
+        const probe = [
+          `세계관 [${params.category}]: ${params.name}`,
+          params.description ? `설명: ${params.description}` : "",
+        ]
+          .filter(Boolean)
+          .join(" - ")
+        const warning = await Rag.detectContradiction({
+          entity_type: "world",
+          content: probe,
+          drama_id: did,
+        })
         const entry = World.create({ drama_id: did, ...params })
+        Rag.index({
+          entity_id: entry.id,
+          entity_type: "world",
+          drama_id: did,
+          content: Rag.serialize.world(entry),
+        }).catch((err) => ragError("tool.rag.index.create_world", err, { entity_id: entry.id, drama_id: did }))
+        const message = warning.warning ? `\n${warning.warning}` : ""
         log.info("tool.create_world", { id: entry.id, category: entry.category })
-        return `세계관 요소 [${entry.category}] "${entry.name}" 이(가) 기록되었습니다.`
+        return `세계관 요소 [${entry.category}] "${entry.name}" 이(가) 기록되었습니다.${message}`
       },
     }),
 
@@ -284,6 +363,12 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
       execute: async (params) => {
         const did = requireDrama()
         const point = PlotPoint.create({ drama_id: did, ...params })
+        Rag.index({
+          entity_id: point.id,
+          entity_type: "plot_point",
+          drama_id: did,
+          content: Rag.serialize.plotPoint(point),
+        }).catch((err) => ragError("tool.rag.index.create_plot_point", err, { entity_id: point.id, drama_id: did }))
         log.info("tool.create_plot_point", { id: point.id, type: point.type })
         return `플롯 포인트 [${point.type}] "${point.description.slice(0, 40)}..." 이(가) 기록되었습니다.`
       },
