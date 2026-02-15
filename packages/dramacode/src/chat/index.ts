@@ -1,15 +1,14 @@
-import { streamText, type ModelMessage } from "ai"
+import { streamText, stepCountIs, type ModelMessage } from "ai"
 import { createOpenAI } from "@ai-sdk/openai"
 import { Auth } from "../auth"
 import { DramaPrompt } from "./prompt"
+import { dramaTools } from "./tools"
 import { Session } from "../session"
 import { Log } from "../util/log"
 
 const log = Log.create({ service: "chat" })
 
 export namespace Chat {
-  export type StreamResult = Awaited<ReturnType<typeof streamText>>
-
   async function provider() {
     const auth = await Auth.get("openai")
     if (!auth) throw new Error("OpenAI not authenticated. Run: dramacode auth login")
@@ -30,7 +29,7 @@ export namespace Chat {
     model?: string
     drama_title?: string
     episode_num?: number
-  }): Promise<{ message: Session.Message; stream: StreamResult }> {
+  }) {
     const openai = await provider()
     const model = input.model ?? "gpt-4o"
 
@@ -40,8 +39,10 @@ export namespace Chat {
       content: input.content,
     })
 
+    const session = Session.get(input.session_id)
     const history = Session.messages(input.session_id)
     const system = DramaPrompt.withContext(input.drama_title, input.episode_num)
+    const tools = dramaTools({ session_id: input.session_id, drama_id: session.drama_id })
 
     log.info("chat.send", {
       session_id: input.session_id,
@@ -53,6 +54,8 @@ export namespace Chat {
       model: openai(model),
       system,
       messages: toModel(history),
+      tools,
+      stopWhen: stepCountIs(5),
     })
 
     const text = await result.text
@@ -76,7 +79,7 @@ export namespace Chat {
     model?: string
     drama_title?: string
     episode_num?: number
-  }): Promise<StreamResult> {
+  }) {
     const openai = await provider()
     const model = input.model ?? "gpt-4o"
 
@@ -86,13 +89,17 @@ export namespace Chat {
       content: input.content,
     })
 
+    const session = Session.get(input.session_id)
     const history = Session.messages(input.session_id)
     const system = DramaPrompt.withContext(input.drama_title, input.episode_num)
+    const tools = dramaTools({ session_id: input.session_id, drama_id: session.drama_id })
 
     return streamText({
       model: openai(model),
       system,
       messages: toModel(history),
+      tools,
+      stopWhen: stepCountIs(5),
       async onFinish({ text }) {
         Session.addMessage({
           session_id: input.session_id,

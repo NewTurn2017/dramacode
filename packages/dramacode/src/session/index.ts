@@ -69,6 +69,20 @@ export namespace Session {
     )
   }
 
+  export function linkDrama(sessionID: string, dramaID: string): Info {
+    const row = Database.use((db) =>
+      db
+        .update(SessionTable)
+        .set({ drama_id: dramaID, time_updated: Date.now() })
+        .where(eq(SessionTable.id, sessionID))
+        .returning()
+        .get(),
+    )
+    if (!row) throw new NotFoundError({ message: `session not found: ${sessionID}` })
+    log.info("session.linked_drama", { session_id: sessionID, drama_id: dramaID })
+    return row
+  }
+
   export function addMessage(input: {
     session_id: string
     role: "user" | "assistant" | "system"
