@@ -198,7 +198,7 @@ export default function DramaDetail() {
             <div class="flex flex-1 min-h-0">
               <Show when={panelOpen()}>
                 <aside
-                  class="w-80 shrink-0 border-r bg-bg overflow-y-auto"
+                  class="w-[28rem] shrink-0 border-r bg-bg overflow-y-auto"
                   classList={{
                     "border-border": !flash(),
                     "border-accent/40": flash(),
@@ -370,7 +370,7 @@ export default function DramaDetail() {
               </Show>
 
               <div class="flex-1 flex min-w-0">
-                <aside class="w-48 shrink-0 border-r border-border bg-bg flex flex-col">
+                <aside class="w-40 shrink-0 border-r border-border bg-bg flex flex-col">
                   <div class="p-2.5 border-b border-border">
                     <button
                       onClick={create}
