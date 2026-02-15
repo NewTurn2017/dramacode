@@ -140,6 +140,8 @@ export namespace Scene {
     description?: string
     dialogue?: string
     notes?: string
+    image_prompt?: { prompt: string; style: string; mood: string; resolution: string }
+    characters_present?: string[]
   }): Info {
     const id = ulid()
     const now = Date.now()
@@ -172,6 +174,19 @@ export namespace Scene {
     )
   }
 
+  export function listByDrama(dramaID: string, limit = 500): Info[] {
+    return Database.use((db) =>
+      db
+        .select({ scene: SceneTable })
+        .from(SceneTable)
+        .innerJoin(EpisodeTable, eq(SceneTable.episode_id, EpisodeTable.id))
+        .where(eq(EpisodeTable.drama_id, dramaID))
+        .orderBy(EpisodeTable.number, SceneTable.number)
+        .limit(limit)
+        .all(),
+    ).map((row) => row.scene)
+  }
+
   export function remove(id: string) {
     Database.use((db) => db.delete(SceneTable).where(eq(SceneTable.id, id)).run())
     log.info("scene.removed", { id })
@@ -179,7 +194,12 @@ export namespace Scene {
 
   export function update(
     id: string,
-    input: Partial<Omit<Info, "id" | "episode_id" | "time_created" | "time_updated">>,
+    input: Partial<
+      Omit<Info, "id" | "episode_id" | "time_created" | "time_updated"> & {
+        image_prompt?: { prompt: string; style: string; mood: string; resolution: string }
+        characters_present?: string[]
+      }
+    >,
   ): Info {
     const row = Database.use((db) =>
       db

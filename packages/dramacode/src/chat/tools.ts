@@ -6,12 +6,87 @@ import { Session } from "../session"
 import { Log } from "../util/log"
 
 const log = Log.create({ service: "chat.tools" })
+const VALIDATION_ERROR = "입력값이 올바르지 않습니다. 필드를 확인해주세요."
+
+z.setErrorMap(() => ({ message: VALIDATION_ERROR }))
+
+function inferMood(input: { description?: string | null; notes?: string | null; tone?: string | null }) {
+  const text = [input.description, input.notes, input.tone].filter(Boolean).join(" ").toLowerCase()
+  if (!text) return "dramatic"
+  if (
+    text.includes("romance") ||
+    text.includes("romantic") ||
+    text.includes("사랑") ||
+    text.includes("로맨") ||
+    text.includes("설렘")
+  )
+    return "romantic"
+  if (
+    text.includes("tension") ||
+    text.includes("tense") ||
+    text.includes("위기") ||
+    text.includes("긴장") ||
+    text.includes("추격") ||
+    text.includes("갈등")
+  )
+    return "tense"
+  if (
+    text.includes("mystery") ||
+    text.includes("mysterious") ||
+    text.includes("비밀") ||
+    text.includes("의문") ||
+    text.includes("수상")
+  )
+    return "mysterious"
+  if (
+    text.includes("sad") ||
+    text.includes("melanch") ||
+    text.includes("슬픔") ||
+    text.includes("쓸쓸") ||
+    text.includes("외로")
+  )
+    return "melancholic"
+  if (
+    text.includes("bright") ||
+    text.includes("warm") ||
+    text.includes("행복") ||
+    text.includes("기쁨") ||
+    text.includes("코믹")
+  )
+    return "cheerful"
+  return "dramatic"
+}
+
+function buildScenePrompt(input: { scene: Scene.Info; drama: Drama.Info }): {
+  prompt: string
+  style: string
+  mood: string
+  resolution: "1K"
+} {
+  const mood = inferMood({
+    description: input.scene.description,
+    notes: input.scene.notes,
+    tone: input.drama.tone,
+  })
+  const place = input.scene.location ?? "an unspecified location"
+  const time = input.scene.time_of_day ? input.scene.time_of_day.toLowerCase() : "an unspecified time"
+  const cast = input.scene.characters_present?.length ? input.scene.characters_present.join(", ") : "the key characters"
+  const action = input.scene.description ?? "the central dramatic action unfolds"
+  const tone = input.drama.tone ?? mood
+
+  return {
+    prompt: `Cinematic Korean drama scene set at ${place} during ${time}, featuring ${cast}. ${action}. Emotional tone: ${tone}.`,
+    style: "cinematic",
+    mood,
+    resolution: "1K",
+  }
+}
 
 export function dramaTools(input: { session_id: string; drama_id?: string | null }) {
   let dramaID = input.drama_id ?? null
 
   function requireDrama(): string {
-    if (!dramaID) throw new Error("드라마를 먼저 생성해주세요 (create_drama 도구 사용)")
+    if (!dramaID) throw new Error("현재 세션에 연결된 드라마가 없습니다.")
     return dramaID!
   }
 
@@ -87,12 +162,55 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
         description: z.string().optional().describe("장면 설명"),
         dialogue: z.string().optional().describe("주요 대사"),
         notes: z.string().optional().describe("연출 노트"),
+        characters_present: z.array(z.string()).optional().describe("등장인물 이름 목록"),
       }),
       execute: async (params) => {
-        requireDrama()
+        const did = requireDrama()
+        const episode = Episode.get(params.episode_id)
+        if (episode.drama_id !== did) throw new Error("현재 드라마에 속한 에피소드만 저장할 수 있습니다.")
         const scene = Scene.create(params)
+        const prompt = buildScenePrompt({ scene, drama: Drama.get(did) })
+        const updated = Scene.update(scene.id, { image_prompt: prompt })
         log.info("tool.create_scene", { id: scene.id, episode_id: params.episode_id })
-        return `S#${scene.number} 장면이 생성되었습니다. (장소: ${scene.location ?? "미정"})`
+        return `S#${updated.number} 장면이 생성되었습니다. (장소: ${updated.location ?? "미정"})`
+      },
+    }),
+
+    update_drama: tool({
+      description:
+        "현재 드라마 메타데이터를 업데이트합니다. 장르, 톤, 로그라인, 배경, 총화수가 대화에서 확정되었을 때 사용하세요.",
+      inputSchema: z
+        .object({
+          genre: z.string().optional().describe("장르 (예: 로맨스, 스릴러, 사극)"),
+          tone: z.string().optional().describe("톤 (예: 따뜻한, 냉소적인, 긴장감 있는)"),
+          logline: z.string().optional().describe("한 줄 로그라인"),
+          setting: z.string().optional().describe("배경 (시대, 장소, 사회 환경)"),
+          total_episodes: z.number().optional().describe("총 에피소드 수"),
+        })
+        .refine((value) => Object.values(value).some((item) => item !== undefined), { message: VALIDATION_ERROR }),
+      execute: async (params) => {
+        const did = requireDrama()
+        const drama = Drama.update(did, params)
+        log.info("tool.update_drama", { drama_id: drama.id })
+        return `드라마 메타데이터가 업데이트되었습니다. (장르: ${drama.genre ?? "미정"}, 톤: ${drama.tone ?? "미정"})`
+      },
+    }),
+
+    generate_scene_prompt: tool({
+      description:
+        "씬 데이터를 기반으로 Nano Banana Pro 호환 이미지 프롬프트 JSON을 생성합니다. 이미지를 생성하지 않고 프롬프트만 저장합니다.",
+      inputSchema: z.object({
+        scene_id: z.string().min(1, VALIDATION_ERROR).describe("장면 ID"),
+      }),
+      execute: async (params) => {
+        const did = requireDrama()
+        const scene = Scene.get(params.scene_id)
+        const episode = Episode.get(scene.episode_id)
+        if (episode.drama_id !== did) throw new Error("현재 드라마에 속한 장면만 처리할 수 있습니다.")
+        const prompt = buildScenePrompt({ scene, drama: Drama.get(did) })
+        Scene.update(scene.id, { image_prompt: prompt })
+        log.info("tool.generate_scene_prompt", { scene_id: scene.id, drama_id: did })
+        return prompt
       },
     }),
 

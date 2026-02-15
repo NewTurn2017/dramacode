@@ -21,6 +21,7 @@ export function DramaRoutes() {
       return c.json(true)
     })
     .get("/:id/episodes", (c) => c.json(Episode.listByDrama(c.req.param("id"))))
+    .get("/:id/scenes", (c) => c.json(Scene.listByDrama(c.req.param("id"))))
     .post("/:id/episodes", async (c) => {
       const body = await c.req.json<Omit<Parameters<typeof Episode.create>[0], "drama_id">>()
       return c.json(Episode.create({ drama_id: c.req.param("id"), ...body }), 201)

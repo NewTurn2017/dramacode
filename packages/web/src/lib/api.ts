@@ -76,6 +76,28 @@ export type World = {
   time_updated: number
 }
 
+export type ScenePrompt = {
+  prompt: string
+  style: string
+  mood: string
+  resolution: string
+}
+
+export type Scene = {
+  id: string
+  episode_id: string
+  number: number
+  location: string | null
+  time_of_day: string | null
+  description: string | null
+  dialogue: string | null
+  notes: string | null
+  image_prompt: ScenePrompt | null
+  characters_present: string[] | null
+  time_created: number
+  time_updated: number
+}
+
 export type PlotPoint = {
   id: string
   drama_id: string
@@ -124,6 +146,7 @@ export const api = {
     remove: (id: string) => del(`/drama/${id}`),
     characters: (id: string) => get<Character[]>(`/drama/${id}/characters`),
     episodes: (id: string) => get<Episode[]>(`/drama/${id}/episodes`),
+    scenes: (id: string) => get<Scene[]>(`/drama/${id}/scenes`),
     world: (id: string) => get<World[]>(`/drama/${id}/world`),
     plotPoints: (id: string) => get<PlotPoint[]>(`/drama/${id}/plot-points`),
   },
