@@ -1,6 +1,7 @@
 import { createSignal, createResource, For, Show, onMount, createEffect } from "solid-js"
 import { api, type Session, type Message } from "@/lib/api"
 import { ConfirmModal } from "@/components/confirm-modal"
+import { Markdown } from "@/components/markdown"
 
 export default function ChatPage() {
   const [sessions, { refetch: refetchSessions }] = createResource(() => api.session.list())
@@ -180,23 +181,26 @@ export default function ChatPage() {
             <For each={messages()}>
               {(msg) => (
                 <div class="flex" classList={{ "justify-end": msg.role === "user" }}>
-                  <div
-                    class="max-w-[70%] px-4 py-2.5 rounded-lg text-sm whitespace-pre-wrap"
-                    classList={{
-                      "bg-accent text-white": msg.role === "user",
-                      "bg-bg-card border border-border": msg.role === "assistant",
-                    }}
+                  <Show
+                    when={msg.role === "assistant"}
+                    fallback={
+                      <div class="max-w-[70%] px-4 py-2.5 rounded-lg text-sm whitespace-pre-wrap bg-accent text-white">
+                        {msg.content}
+                      </div>
+                    }
                   >
-                    {msg.content}
-                  </div>
+                    <div class="max-w-[70%] px-4 py-2.5 rounded-lg text-sm bg-bg-card border border-border">
+                      <Markdown content={msg.content} />
+                    </div>
+                  </Show>
                 </div>
               )}
             </For>
 
             <Show when={streaming() && streamText()}>
               <div class="flex">
-                <div class="max-w-[70%] px-4 py-2.5 rounded-lg text-sm bg-bg-card border border-border whitespace-pre-wrap">
-                  {streamText()}
+                <div class="max-w-[70%] px-4 py-2.5 rounded-lg text-sm bg-bg-card border border-border">
+                  <Markdown content={streamText()} />
                   <span class="inline-block w-1.5 h-4 bg-accent animate-pulse ml-0.5" />
                 </div>
               </div>
