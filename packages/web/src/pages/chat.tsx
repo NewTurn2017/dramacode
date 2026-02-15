@@ -1,105 +1,15 @@
-import { createSignal, createResource, For, Show, onMount, createEffect } from "solid-js"
-import { api, type Session, type Message } from "@/lib/api"
+import { createSignal, createResource, For, Show } from "solid-js"
+import { api, type Session } from "@/lib/api"
 import { ConfirmModal } from "@/components/confirm-modal"
-import { Markdown } from "@/components/markdown"
+import { ChatPanel } from "@/components/chat-panel"
+
+type OpenTab = { id: string; label: string }
 
 export default function ChatPage() {
   const [sessions, { refetch: refetchSessions }] = createResource(() => api.session.list())
-  const [activeSession, setActiveSession] = createSignal<string | null>(null)
-  const [messages, setMessages] = createSignal<Message[]>([])
-  const [input, setInput] = createSignal("")
-  const [streaming, setStreaming] = createSignal(false)
-  const [streamText, setStreamText] = createSignal("")
+  const [openTabs, setOpenTabs] = createSignal<OpenTab[]>([])
+  const [activeTab, setActiveTab] = createSignal<string | null>(null)
   const [deleteTarget, setDeleteTarget] = createSignal<Session | null>(null)
-  let messagesEnd: HTMLDivElement | undefined
-  let inputRef: HTMLTextAreaElement | undefined
-
-  function scrollToBottom() {
-    messagesEnd?.scrollIntoView({ behavior: "smooth" })
-  }
-
-  createEffect(() => {
-    messages()
-    streamText()
-    scrollToBottom()
-  })
-
-  async function selectSession(id: string) {
-    setActiveSession(id)
-    const msgs = await api.session.messages(id)
-    setMessages(msgs)
-  }
-
-  async function createSession() {
-    const session = await api.session.create()
-    refetchSessions()
-    await selectSession(session.id)
-  }
-
-  async function confirmDeleteSession() {
-    const target = deleteTarget()
-    if (!target) return
-    setDeleteTarget(null)
-    if (activeSession() === target.id) {
-      setActiveSession(null)
-      setMessages([])
-    }
-    await api.session.remove(target.id)
-    refetchSessions()
-  }
-
-  async function handleSend(e: Event) {
-    e.preventDefault()
-    const text = input().trim()
-    if (!text || streaming() || !activeSession()) return
-
-    setInput("")
-    setMessages((prev) => [
-      ...prev,
-      { id: "temp-user", session_id: activeSession()!, role: "user", content: text, time_created: Date.now() },
-    ])
-    setStreaming(true)
-    setStreamText("")
-
-    const res = await api.chat.stream(activeSession()!, text)
-    if (!res.ok || !res.body) {
-      setStreaming(false)
-      return
-    }
-
-    const reader = res.body.getReader()
-    const decoder = new TextDecoder()
-    let full = ""
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      full += decoder.decode(value, { stream: true })
-      setStreamText(full)
-    }
-
-    setStreamText("")
-    setStreaming(false)
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: "temp-assistant",
-        session_id: activeSession()!,
-        role: "assistant",
-        content: full,
-        time_created: Date.now(),
-      },
-    ])
-
-    const current = sessions()?.find((s) => s.id === activeSession())
-    if (current && (!current.title || current.title.startsWith("New session"))) {
-      const label = text.length > 30 ? text.slice(0, 30) + "…" : text
-      await api.session.updateTitle(activeSession()!, label)
-      refetchSessions()
-    }
-
-    inputRef?.focus()
-  }
 
   function sessionLabel(s: Session) {
     if (s.title && !s.title.startsWith("New session")) return s.title
@@ -111,11 +21,39 @@ export default function ChatPage() {
     })
   }
 
-  function handleKeyDown(e: KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      handleSend(e)
+  function openSession(s: Session) {
+    if (!openTabs().find((t) => t.id === s.id)) {
+      setOpenTabs((tabs) => [...tabs, { id: s.id, label: sessionLabel(s) }])
     }
+    setActiveTab(s.id)
+  }
+
+  async function createAndOpen() {
+    const session = await api.session.create()
+    refetchSessions()
+    openSession(session)
+  }
+
+  function closeTab(id: string) {
+    const remaining = openTabs().filter((t) => t.id !== id)
+    setOpenTabs(remaining)
+    if (activeTab() === id) {
+      setActiveTab(remaining.length > 0 ? remaining[remaining.length - 1].id : null)
+    }
+  }
+
+  async function confirmDeleteSession() {
+    const target = deleteTarget()
+    if (!target) return
+    setDeleteTarget(null)
+    closeTab(target.id)
+    await api.session.remove(target.id)
+    refetchSessions()
+  }
+
+  function handleTitleChange(sessionId: string, title: string) {
+    setOpenTabs((tabs) => tabs.map((t) => (t.id === sessionId ? { ...t, label: title } : t)))
+    refetchSessions()
   }
 
   return (
@@ -123,7 +61,7 @@ export default function ChatPage() {
       <aside class="w-52 shrink-0 border-r border-border bg-bg flex flex-col">
         <div class="p-3 border-b border-border">
           <button
-            onClick={createSession}
+            onClick={createAndOpen}
             class="w-full px-3 py-1.5 bg-accent text-white text-sm rounded-md hover:bg-accent-hover transition-colors"
           >
             + 새 대화
@@ -135,16 +73,16 @@ export default function ChatPage() {
               <div
                 class="flex items-center group rounded-md transition-colors"
                 classList={{
-                  "bg-bg-hover": activeSession() === s.id,
-                  "hover:bg-bg-hover": activeSession() !== s.id,
+                  "bg-bg-hover": activeTab() === s.id,
+                  "hover:bg-bg-hover": activeTab() !== s.id,
                 }}
               >
                 <button
-                  onClick={() => selectSession(s.id)}
+                  onClick={() => openSession(s)}
                   class="flex-1 text-left px-3 py-2 text-sm truncate"
                   classList={{
-                    "text-accent": activeSession() === s.id,
-                    "text-text-dim hover:text-text": activeSession() !== s.id,
+                    "text-accent": openTabs().some((t) => t.id === s.id),
+                    "text-text-dim hover:text-text": !openTabs().some((t) => t.id === s.id),
                   }}
                 >
                   {sessionLabel(s)}
@@ -165,9 +103,38 @@ export default function ChatPage() {
         </div>
       </aside>
 
-      <div class="flex-1 flex flex-col">
+      <div class="flex-1 flex flex-col min-w-0">
+        <Show when={openTabs().length > 0}>
+          <div class="flex items-center border-b border-border bg-bg overflow-x-auto shrink-0">
+            <For each={openTabs()}>
+              {(tab) => (
+                <div
+                  class="flex items-center gap-1 px-3 py-2 border-r border-border cursor-pointer text-sm shrink-0 max-w-[180px] transition-colors"
+                  classList={{
+                    "bg-bg-card text-text": activeTab() === tab.id,
+                    "text-text-dim hover:bg-bg-hover hover:text-text": activeTab() !== tab.id,
+                  }}
+                >
+                  <button onClick={() => setActiveTab(tab.id)} class="truncate flex-1 text-left">
+                    {tab.label}
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      closeTab(tab.id)
+                    }}
+                    class="text-text-dim hover:text-danger text-xs shrink-0 ml-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
+
         <Show
-          when={activeSession()}
+          when={openTabs().length > 0}
           fallback={
             <div class="flex-1 flex items-center justify-center">
               <div class="text-center">
@@ -177,74 +144,32 @@ export default function ChatPage() {
             </div>
           }
         >
-          <div class="flex-1 overflow-auto p-4 space-y-4">
-            <For each={messages()}>
-              {(msg) => (
-                <div class="flex" classList={{ "justify-end": msg.role === "user" }}>
-                  <Show
-                    when={msg.role === "assistant"}
-                    fallback={
-                      <div class="max-w-[70%] px-4 py-2.5 rounded-lg text-sm whitespace-pre-wrap bg-accent text-white">
-                        {msg.content}
-                      </div>
-                    }
-                  >
-                    <div class="max-w-[70%] px-4 py-2.5 rounded-lg text-sm bg-bg-card border border-border">
-                      <Markdown content={msg.content} />
-                    </div>
-                  </Show>
+          <div class="flex-1 relative min-h-0">
+            <For each={openTabs()}>
+              {(tab) => (
+                <div
+                  class="absolute inset-0"
+                  style={{
+                    "z-index": activeTab() === tab.id ? 1 : 0,
+                    visibility: activeTab() === tab.id ? "visible" : "hidden",
+                  }}
+                >
+                  <ChatPanel
+                    sessionId={tab.id}
+                    visible={activeTab() === tab.id}
+                    onTitleChange={(title) => handleTitleChange(tab.id, title)}
+                  />
                 </div>
               )}
             </For>
-
-            <Show when={streaming() && streamText()}>
-              <div class="flex">
-                <div class="max-w-[70%] px-4 py-2.5 rounded-lg text-sm bg-bg-card border border-border">
-                  <Markdown content={streamText()} />
-                  <span class="inline-block w-1.5 h-4 bg-accent animate-pulse ml-0.5" />
-                </div>
-              </div>
-            </Show>
-
-            <Show when={streaming() && !streamText()}>
-              <div class="flex">
-                <div class="px-4 py-2.5 rounded-lg text-sm bg-bg-card border border-border text-text-dim">
-                  생각하는 중...
-                </div>
-              </div>
-            </Show>
-
-            <div ref={messagesEnd} />
           </div>
-
-          <form onSubmit={handleSend} class="p-4 border-t border-border">
-            <div class="flex gap-2">
-              <textarea
-                ref={inputRef}
-                value={input()}
-                onInput={(e) => setInput(e.currentTarget.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="메시지를 입력하세요... (Shift+Enter 줄바꿈)"
-                rows={2}
-                class="flex-1 px-3 py-2 bg-bg-card border border-border rounded-md text-sm text-text placeholder:text-text-dim resize-none focus:outline-none focus:border-accent"
-                disabled={streaming()}
-              />
-              <button
-                type="submit"
-                disabled={streaming() || !input().trim()}
-                class="px-4 py-2 bg-accent text-white text-sm font-medium rounded-md hover:bg-accent-hover disabled:opacity-50 transition-colors self-end"
-              >
-                전송
-              </button>
-            </div>
-          </form>
         </Show>
       </div>
 
       <ConfirmModal
         open={!!deleteTarget()}
         title="세션 삭제"
-        message={`"${sessionLabel(deleteTarget()!)}" 대화를 삭제하시겠습니까?`}
+        message={`"${deleteTarget() ? sessionLabel(deleteTarget()!) : ""}" 대화를 삭제하시겠습니까?`}
         onConfirm={confirmDeleteSession}
         onCancel={() => setDeleteTarget(null)}
       />
