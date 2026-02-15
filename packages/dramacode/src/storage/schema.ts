@@ -8,3 +8,4 @@ export {
   PlotPointTable,
   SceneCharacterTable,
 } from "../drama/drama.sql"
+export { WriterStyleTable } from "../writer/writer.sql"

@@ -1,6 +1,7 @@
 import { tool } from "ai"
 import { z } from "zod"
 import { Drama, Episode, Character, World, PlotPoint, Scene } from "../drama"
+import { WriterStyle } from "../writer"
 import { Session } from "../session"
 import { Log } from "../util/log"
 
@@ -123,6 +124,28 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
         const point = PlotPoint.create({ drama_id: did, ...params })
         log.info("tool.create_plot_point", { id: point.id, type: point.type })
         return `플롯 포인트 [${point.type}] "${point.description.slice(0, 40)}..." 이(가) 기록되었습니다.`
+      },
+    }),
+
+    observe_writer_style: tool({
+      description:
+        "작가의 창작 스타일, 선호도, 습관을 기록합니다. 대화 중 작가의 반복적인 패턴이나 확실한 선호를 발견했을 때 사용하세요. 예: 특정 장르 선호, 대사 스타일, 캐릭터 구축 방식, 서사 구조 취향 등.",
+      inputSchema: z.object({
+        category: z
+          .enum(["genre", "dialogue", "character", "structure", "preference", "habit"])
+          .describe(
+            "카테고리: genre=장르 선호, dialogue=대사 스타일, character=캐릭터 구축, structure=서사 구조, preference=일반 취향, habit=작업 습관",
+          ),
+        observation: z.string().describe("관찰한 스타일/선호에 대한 구체적 설명 (한국어)"),
+      }),
+      execute: async (params) => {
+        const style = WriterStyle.create({
+          ...params,
+          drama_id: dramaID ?? undefined,
+          session_id: input.session_id,
+        })
+        log.info("tool.observe_writer_style", { id: style.id, category: style.category })
+        return `작가 스타일 기록됨: [${style.category}] ${style.observation.slice(0, 60)}`
       },
     }),
   }

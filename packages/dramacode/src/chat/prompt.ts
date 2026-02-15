@@ -1,4 +1,5 @@
 import { Drama, Episode, Character, World, PlotPoint } from "../drama"
+import { WriterStyle } from "../writer"
 
 export namespace DramaPrompt {
   export const system = `당신은 **DRAMACODE** — 한국 드라마 각본 전문 AI 작가입니다.
@@ -44,6 +45,18 @@ TV 드라마 시리즈의 각본 작업을 돕는 시니어 작가. 사용자(�
 자연스러운 대화 흐름을 유지하면서, 작가가 결정한 중요 사항을 놓치지 않고 저장하세요.
 도구를 사용했을 때 별도로 알리지 말고, 대화 맥락에 자연스럽게 녹이세요.
 
+## 작가 스타일 관찰 지침
+대화 중 작가의 창작 스타일이나 선호를 발견하면 \`observe_writer_style\`로 기록하세요:
+- **genre**: 선호하는 장르, 장르 혼합 경향
+- **dialogue**: 대사 스타일 (문어체/구어체, 길이, 서브텍스트 선호 등)
+- **character**: 캐릭터 구축 방식 (심리 묘사 깊이, 회색 캐릭터 선호 등)
+- **structure**: 서사 구조 취향 (비선형, 복선 밀도, 페이싱 등)
+- **preference**: 일반적 취향 (해피엔딩/새드엔딩, 현실적/판타지 등)
+- **habit**: 작업 습관 (에피소드부터/캐릭터부터, 아웃라인 중시 등)
+
+이미 기록된 스타일과 중복되지 않도록 새로운 관찰만 기록하세요.
+확실한 패턴이 보일 때만 기록하고, 한 번의 언급으로 성급하게 판단하지 마세요.
+
 대화를 시작할 때 간단히 인사하고, 어떤 작업을 하고 있는지 물어보세요.`
 
   export function withContext(dramaTitle?: string, episodeNum?: number): string {
@@ -53,8 +66,41 @@ TV 드라마 시리즈의 각본 작업을 돕는 시니어 작가. 사용자(�
     return parts.join("\n")
   }
 
+  function writerProfile(): string {
+    const styles = WriterStyle.list()
+    if (!styles.length) return ""
+
+    const grouped = new Map<string, typeof styles>()
+    for (const s of styles) {
+      const list = grouped.get(s.category) ?? []
+      list.push(s)
+      grouped.set(s.category, list)
+    }
+
+    const labels: Record<string, string> = {
+      genre: "장르 선호",
+      dialogue: "대사 스타일",
+      character: "캐릭터 구축",
+      structure: "서사 구조",
+      preference: "일반 취향",
+      habit: "작업 습관",
+    }
+
+    const lines = ["\n## 작가 프로필"]
+    for (const [cat, items] of grouped) {
+      lines.push(`\n### ${labels[cat] ?? cat}`)
+      for (const item of items) {
+        const conf = item.confidence > 1 ? ` (확신도: ${item.confidence}/5)` : ""
+        lines.push(`- ${item.observation}${conf}`)
+      }
+    }
+    return lines.join("\n")
+  }
+
   export function buildContext(dramaId?: string | null): string {
-    if (!dramaId) return system
+    const profile = writerProfile()
+
+    if (!dramaId) return system + profile
 
     const drama = Drama.get(dramaId)
     const characters = Character.listByDrama(dramaId)
@@ -110,6 +156,6 @@ TV 드라마 시리즈의 각본 작업을 돕는 시니어 작가. 사용자(�
       }
     }
 
-    return parts.join("\n")
+    return parts.join("\n") + profile
   }
 }
