@@ -1,10 +1,11 @@
 import { Hono } from "hono"
 import { cors } from "hono/cors"
-import { streamSSE } from "hono/streaming"
-import z from "zod"
 import { Log } from "../util/log"
 import { Auth } from "../auth"
 import { lazy } from "../util/lazy"
+import { SessionRoutes } from "./routes/session"
+import { ChatRoutes } from "./routes/chat"
+import { NotFoundError } from "../storage/db"
 
 const log = Log.create({ service: "server" })
 
@@ -22,6 +23,7 @@ export namespace Server {
       app
         .onError((err, c) => {
           log.error("failed", { error: String(err) })
+          if (err instanceof NotFoundError) return c.json({ error: err.message }, 404)
           return c.json({ error: err instanceof Error ? err.message : String(err) }, 500)
         })
         .use(async (c, next) => {
@@ -39,6 +41,8 @@ export namespace Server {
           }),
         )
         .get("/health", (c) => c.json({ ok: true }))
+        .route("/session", SessionRoutes())
+        .route("/chat", ChatRoutes())
         .put("/auth/:providerID", async (c) => {
           const providerID = c.req.param("providerID")
           const body = await c.req.json()
