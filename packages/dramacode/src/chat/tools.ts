@@ -152,6 +152,50 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
       },
     }),
 
+    breakdown_episode: tool({
+      description:
+        "에피소드를 개별 장면으로 분해합니다. 에피소드 시놉시스와 캐릭터/플롯 컨텍스트를 분석하여 구체적인 씬 목록을 제안합니다.",
+      inputSchema: z.object({
+        episode_id: z.string().describe("에피소드 ID"),
+      }),
+      execute: async (params) => {
+        const did = requireDrama()
+        const episode = Episode.get(params.episode_id)
+        if (episode.drama_id !== did) throw new Error("현재 드라마에 속한 에피소드만 분해할 수 있습니다.")
+
+        const scenes = Scene.listByEpisode(params.episode_id)
+        const characters = Character.listByDrama(did, 20)
+        const points = PlotPoint.listByDrama(did, 50).filter(
+          (point) => !point.episode_id || point.episode_id === params.episode_id,
+        )
+
+        const cast =
+          characters.length === 0
+            ? "- 없음"
+            : characters
+                .map((character) => `- ${character.name}${character.role ? ` (${character.role})` : ""}`)
+                .join("\n")
+        const plot =
+          points.length === 0 ? "- 없음" : points.map((point) => `- [${point.type}] ${point.description}`).join("\n")
+
+        return [
+          `다음 지침에 따라 ${episode.number}화 \"${episode.title}\"의 씬 브레이크다운을 작성하세요.`,
+          "반드시 여러 번 save_scene를 호출해 장면을 실제로 저장하세요.",
+          "각 save_scene 호출에는 episode_id를 그대로 사용하고 number를 1부터 순서대로 증가시키세요.",
+          "한 장면마다 location, time_of_day, description, dialogue, notes, characters_present를 가능한 범위에서 채우세요.",
+          "장면 수는 6~12개를 목표로 하고, 기존 씬이 있으면 이어서 번호를 배정하세요.",
+          `현재 저장된 씬 수: ${scenes.length}개`,
+          "\n[에피소드 시놉시스]",
+          episode.synopsis ?? "- 없음",
+          "\n[캐릭터 컨텍스트]",
+          cast,
+          "\n[플롯 컨텍스트]",
+          plot,
+          "\n분해를 제안만 하지 말고, 바로 save_scene를 연속 호출해 저장을 완료한 뒤 짧게 요약 보고하세요.",
+        ].join("\n")
+      },
+    }),
+
     save_scene: tool({
       description: "장면(씬)을 생성합니다. 구체적인 장면이 논의될 때 사용하세요. 반드시 episode_id가 필요합니다.",
       inputSchema: z.object({

@@ -1,0 +1,1 @@
+ALTER TABLE `session` ADD `summary_count` integer DEFAULT 0 NOT NULL;

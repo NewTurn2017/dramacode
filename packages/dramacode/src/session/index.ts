@@ -1,5 +1,5 @@
 import { ulid } from "ulid"
-import { Database, eq, desc, NotFoundError } from "../storage/db"
+import { Database, eq, desc, and, notInArray, NotFoundError } from "../storage/db"
 import { SessionTable, MessageTable } from "./session.sql"
 import { Log } from "../util/log"
 
@@ -20,6 +20,7 @@ export namespace Session {
           id,
           title,
           drama_id: input.drama_id ?? null,
+          summary_count: 0,
           time_created: now,
           time_updated: now,
         })
@@ -93,6 +94,79 @@ export namespace Session {
     if (!row) throw new NotFoundError({ message: `session not found: ${sessionID}` })
     log.info("session.linked_drama", { session_id: sessionID, drama_id: dramaID })
     return row
+  }
+
+  export function totalChars(sessionID: string): number {
+    return Database.use((db) =>
+      db
+        .select({ content: MessageTable.content })
+        .from(MessageTable)
+        .where(eq(MessageTable.session_id, sessionID))
+        .all()
+        .reduce((sum, row) => sum + row.content.length, 0),
+    )
+  }
+
+  export function compact(input: { session_id: string; summary: string; keep_last: number }) {
+    const now = Date.now()
+    const msg = Database.transaction((tx) => {
+      const session = tx.select().from(SessionTable).where(eq(SessionTable.id, input.session_id)).get()
+      if (!session) throw new NotFoundError({ message: `session not found: ${input.session_id}` })
+
+      const rows = tx
+        .select()
+        .from(MessageTable)
+        .where(eq(MessageTable.session_id, input.session_id))
+        .orderBy(MessageTable.time_created)
+        .all()
+
+      const keep = rows.slice(-input.keep_last)
+      if (keep.length) {
+        tx.delete(MessageTable)
+          .where(
+            and(
+              eq(MessageTable.session_id, input.session_id),
+              notInArray(
+                MessageTable.id,
+                keep.map((row) => row.id),
+              ),
+            ),
+          )
+          .run()
+      }
+
+      if (!keep.length) {
+        tx.delete(MessageTable).where(eq(MessageTable.session_id, input.session_id)).run()
+      }
+
+      const message = tx
+        .insert(MessageTable)
+        .values({
+          id: ulid(),
+          session_id: input.session_id,
+          role: "system",
+          content: input.summary,
+          time_created: keep[0] ? keep[0].time_created - 1 : now,
+          time_updated: now,
+        })
+        .returning()
+        .get()
+
+      tx.update(SessionTable)
+        .set({ summary_count: session.summary_count + 1, time_updated: now })
+        .where(eq(SessionTable.id, input.session_id))
+        .run()
+
+      return message
+    })
+
+    log.info("session.compacted", {
+      session_id: input.session_id,
+      keep_last: input.keep_last,
+      summary_length: input.summary.length,
+    })
+
+    return msg
   }
 
   export function addMessage(input: {

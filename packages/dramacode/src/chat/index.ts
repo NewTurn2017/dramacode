@@ -1,4 +1,4 @@
-import { streamText, stepCountIs, type ModelMessage } from "ai"
+import { streamText, generateText, stepCountIs, type ModelMessage } from "ai"
 import { createOpenAI } from "@ai-sdk/openai"
 import { Auth, OAUTH_DUMMY_KEY } from "../auth"
 import { OpenAIAuth } from "../plugin/openai"
@@ -6,6 +6,7 @@ import { DramaPrompt } from "./prompt"
 import { dramaTools } from "./tools"
 import { Session } from "../session"
 import { Log } from "../util/log"
+import { compactIfNeeded } from "./compaction"
 
 const log = Log.create({ service: "chat" })
 
@@ -24,6 +25,46 @@ export namespace Chat {
     }))
   }
 
+  async function compact(input: {
+    session_id: string
+    drama_id?: string | null
+    summary_count: number
+    model: string
+    openai: Awaited<ReturnType<typeof provider>>
+  }) {
+    const total = Session.totalChars(input.session_id)
+    const messages = Session.messages(input.session_id, 10_000)
+    const context = DramaPrompt.buildContext(input.drama_id)
+    const result = await compactIfNeeded({
+      total_chars: total,
+      summary_count: input.summary_count + 1,
+      context,
+      messages,
+      summarize: async (prompt) => {
+        const response = await generateText({
+          model: input.openai(input.model),
+          prompt,
+          providerOptions: { openai: { store: false } },
+        })
+        return response.text
+      },
+    })
+    if (!result) return
+
+    Session.compact({
+      session_id: input.session_id,
+      summary: result.summary,
+      keep_last: result.keep_last,
+    })
+
+    log.info("chat.compacted", {
+      session_id: input.session_id,
+      total_chars: total,
+      keep_last: result.keep_last,
+      summary_chars: result.summary.length,
+    })
+  }
+
   export async function send(input: { session_id: string; content: string; model?: string }) {
     const openai = await provider()
     const model = input.model ?? "gpt-5.2"
@@ -35,6 +76,13 @@ export namespace Chat {
     })
 
     const session = Session.get(input.session_id)
+    await compact({
+      session_id: input.session_id,
+      drama_id: session.drama_id,
+      summary_count: session.summary_count,
+      model,
+      openai,
+    })
     const history = Session.messages(input.session_id)
     const system = DramaPrompt.buildContext(session.drama_id)
     const tools = dramaTools({ session_id: input.session_id, drama_id: session.drama_id })
@@ -103,6 +151,13 @@ export namespace Chat {
     })
 
     const session = Session.get(input.session_id)
+    await compact({
+      session_id: input.session_id,
+      drama_id: session.drama_id,
+      summary_count: session.summary_count,
+      model,
+      openai,
+    })
     const history = Session.messages(input.session_id)
     const system = DramaPrompt.buildContext(session.drama_id)
     const tools = dramaTools({ session_id: input.session_id, drama_id: session.drama_id })

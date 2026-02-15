@@ -7,6 +7,7 @@ export const SessionTable = sqliteTable(
     id: text().primaryKey(),
     title: text().notNull(),
     drama_id: text(),
+    summary_count: integer().notNull().default(0),
     ...Timestamps,
   },
   (table) => [index("session_drama_idx").on(table.drama_id)],
