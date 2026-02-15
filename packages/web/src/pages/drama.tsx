@@ -104,6 +104,12 @@ export default function DramaDetail() {
   const [active, setActive] = createSignal<string | null>(null)
   const [deleteTarget, setDeleteTarget] = createSignal<Session | null>(null)
 
+  createEffect(() => {
+    dramaId()
+    setTabs([])
+    setActive(null)
+  })
+
   function sessionLabel(s: Session) {
     if (s.title && !s.title.startsWith("New session")) return s.title
     return new Date(s.time_created).toLocaleDateString("ko-KR", {
