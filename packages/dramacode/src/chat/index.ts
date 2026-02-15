@@ -102,11 +102,13 @@ export namespace Chat {
       stopWhen: stepCountIs(5),
       providerOptions: { openai: { instructions: system, store: false } },
       async onFinish({ text }) {
-        Session.addMessage({
-          session_id: input.session_id,
-          role: "assistant",
-          content: text,
-        })
+        if (text.trim()) {
+          Session.addMessage({
+            session_id: input.session_id,
+            role: "assistant",
+            content: text,
+          })
+        }
       },
     })
   }

@@ -28,6 +28,25 @@ export const ChatCommand: CommandModule = {
 
     console.log(`\n  📝 Session: ${session.title}`)
     console.log(`  🔑 ID: ${session.id}`)
+
+    if (session.drama_id) {
+      console.log(`  🎬 Drama: ${session.drama_id}`)
+    }
+
+    if (args.session) {
+      const messages = Session.messages(session.id)
+      const total = messages.length
+      if (total > 0) {
+        console.log(`  📜 이전 대화 ${total}건`)
+        const recent = messages.slice(-4)
+        for (const msg of recent) {
+          const label = msg.role === "user" ? "작가" : "AI"
+          const truncated = msg.content.length > 150 ? msg.content.slice(0, 150) + "..." : msg.content
+          console.log(`    ${label}: ${truncated}`)
+        }
+      }
+    }
+
     console.log(`  💡 Type your message. Use Ctrl+C to exit.\n`)
 
     const rl = createInterface({
@@ -40,20 +59,33 @@ export const ChatCommand: CommandModule = {
         const trimmed = input.trim()
         if (!trimmed) return prompt()
 
-        process.stdout.write("\nDRAMACODE > ")
+        try {
+          process.stdout.write("\nDRAMACODE > ")
 
-        const result = await Chat.stream({
-          session_id: session.id,
-          content: trimmed,
-          model: args.model as string,
-        })
+          const result = await Chat.stream({
+            session_id: session.id,
+            content: trimmed,
+            model: args.model as string,
+          })
 
-        for await (const chunk of result.textStream) {
-          process.stdout.write(chunk)
+          for await (const part of result.fullStream) {
+            if (part.type === "text-delta") {
+              process.stdout.write(part.text)
+            } else if (part.type === "tool-call") {
+              process.stdout.write(`\n  🔧 ${part.toolName}...`)
+            } else if (part.type === "tool-result") {
+              process.stdout.write(` ✅\n`)
+            }
+          }
+
+          console.log("\n")
+          prompt()
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          console.error(`\n  ❌ 오류: ${msg}`)
+          console.log("")
+          prompt()
         }
-
-        console.log("\n")
-        prompt()
       })
     }
 
