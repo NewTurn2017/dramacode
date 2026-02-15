@@ -1,4 +1,3 @@
-import { createHash, randomBytes } from "crypto"
 import open from "open"
 import { Auth, OAUTH_DUMMY_KEY } from "../auth"
 import { Log } from "../util/log"
@@ -162,14 +161,30 @@ const htmlError = (msg: string) => `<!doctype html>
 let server: ReturnType<typeof Bun.serve> | undefined
 let pending: Pending | undefined
 
-function generatePkce(): Pkce {
-  const verifier = randomBytes(32).toString("base64url")
-  const challenge = createHash("sha256").update(verifier).digest("base64url")
+function generateRandomString(length: number) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+  const bytes = crypto.getRandomValues(new Uint8Array(length))
+  return Array.from(bytes)
+    .map((b) => chars[b % chars.length])
+    .join("")
+}
+
+function base64UrlEncode(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer)
+  const binary = String.fromCharCode(...bytes)
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+}
+
+async function generatePkce(): Promise<Pkce> {
+  const verifier = generateRandomString(43)
+  const data = new TextEncoder().encode(verifier)
+  const hash = await crypto.subtle.digest("SHA-256", data)
+  const challenge = base64UrlEncode(hash)
   return { verifier, challenge }
 }
 
 function generateState() {
-  return randomBytes(32).toString("base64url")
+  return base64UrlEncode(crypto.getRandomValues(new Uint8Array(32)).buffer)
 }
 
 function parseClaims(token: string): Claims | undefined {
@@ -346,7 +361,7 @@ function makeHeaders(input?: ConstructorParameters<typeof Headers>[0]) {
 export namespace OpenAIAuth {
   export async function browserLogin() {
     const redirectUri = startServer()
-    const pkce = generatePkce()
+    const pkce = await generatePkce()
     const state = generateState()
     const url = authorizeUrl(redirectUri, pkce, state)
     const done = waitForCallback(pkce, state)
