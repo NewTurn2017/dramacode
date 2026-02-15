@@ -199,7 +199,6 @@ function extractAccountId(token: Token) {
 function authorizeUrl(redirectUri: string, pkce: Pkce, state: string) {
   const params = new URLSearchParams({
     response_type: "code",
-    response_mode: "query",
     client_id: CLIENT_ID,
     redirect_uri: redirectUri,
     scope: "openid profile email offline_access",
@@ -208,7 +207,7 @@ function authorizeUrl(redirectUri: string, pkce: Pkce, state: string) {
     id_token_add_organizations: "true",
     codex_cli_simplified_flow: "true",
     state,
-    originator: "dramacode",
+    originator: "opencode",
   })
   return `${ISSUER}/oauth/authorize?${params.toString()}`
 }
