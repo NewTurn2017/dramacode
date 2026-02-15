@@ -1,5 +1,6 @@
 import { createSignal, createResource, For, Show, onMount, createEffect } from "solid-js"
 import { api, type Session, type Message } from "@/lib/api"
+import { ConfirmModal } from "@/components/confirm-modal"
 
 export default function ChatPage() {
   const [sessions, { refetch: refetchSessions }] = createResource(() => api.session.list())
@@ -8,6 +9,7 @@ export default function ChatPage() {
   const [input, setInput] = createSignal("")
   const [streaming, setStreaming] = createSignal(false)
   const [streamText, setStreamText] = createSignal("")
+  const [deleteTarget, setDeleteTarget] = createSignal<Session | null>(null)
   let messagesEnd: HTMLDivElement | undefined
   let inputRef: HTMLTextAreaElement | undefined
 
@@ -31,6 +33,18 @@ export default function ChatPage() {
     const session = await api.session.create()
     refetchSessions()
     await selectSession(session.id)
+  }
+
+  async function confirmDeleteSession() {
+    const target = deleteTarget()
+    if (!target) return
+    setDeleteTarget(null)
+    if (activeSession() === target.id) {
+      setActiveSession(null)
+      setMessages([])
+    }
+    await api.session.remove(target.id)
+    refetchSessions()
   }
 
   async function handleSend(e: Event) {
@@ -75,7 +89,25 @@ export default function ChatPage() {
         time_created: Date.now(),
       },
     ])
+
+    const current = sessions()?.find((s) => s.id === activeSession())
+    if (current && (!current.title || current.title.startsWith("New session"))) {
+      const label = text.length > 30 ? text.slice(0, 30) + "…" : text
+      await api.session.updateTitle(activeSession()!, label)
+      refetchSessions()
+    }
+
     inputRef?.focus()
+  }
+
+  function sessionLabel(s: Session) {
+    if (s.title && !s.title.startsWith("New session")) return s.title
+    return new Date(s.time_created).toLocaleDateString("ko-KR", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -99,16 +131,34 @@ export default function ChatPage() {
         <div class="flex-1 overflow-auto p-2 space-y-0.5">
           <For each={sessions()}>
             {(s) => (
-              <button
-                onClick={() => selectSession(s.id)}
-                class="w-full text-left px-3 py-2 rounded-md text-sm truncate transition-colors"
+              <div
+                class="flex items-center group rounded-md transition-colors"
                 classList={{
-                  "bg-bg-hover text-accent": activeSession() === s.id,
-                  "text-text-dim hover:bg-bg-hover hover:text-text": activeSession() !== s.id,
+                  "bg-bg-hover": activeSession() === s.id,
+                  "hover:bg-bg-hover": activeSession() !== s.id,
                 }}
               >
-                {s.title ?? s.id.slice(0, 12)}
-              </button>
+                <button
+                  onClick={() => selectSession(s.id)}
+                  class="flex-1 text-left px-3 py-2 text-sm truncate"
+                  classList={{
+                    "text-accent": activeSession() === s.id,
+                    "text-text-dim hover:text-text": activeSession() !== s.id,
+                  }}
+                >
+                  {sessionLabel(s)}
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setDeleteTarget(s)
+                  }}
+                  class="p-1 mr-1 text-text-dim hover:text-danger opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                  title="삭제"
+                >
+                  ✕
+                </button>
+              </div>
             )}
           </For>
         </div>
@@ -186,6 +236,14 @@ export default function ChatPage() {
           </form>
         </Show>
       </div>
+
+      <ConfirmModal
+        open={!!deleteTarget()}
+        title="세션 삭제"
+        message={`"${sessionLabel(deleteTarget()!)}" 대화를 삭제하시겠습니까?`}
+        onConfirm={confirmDeleteSession}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   )
 }

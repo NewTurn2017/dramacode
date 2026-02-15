@@ -51,36 +51,38 @@ export default function WriterPage() {
         </div>
       </Show>
 
-      <div class="space-y-6">
-        <For each={[...grouped().entries()]}>
-          {([category, items]) => (
-            <div>
-              <h3 class="text-sm font-medium text-text-dim mb-2">
-                {categoryIcon[category] ?? "📝"} {categoryLabel[category] ?? category}
-                <span class="ml-1 text-xs">({items.length})</span>
-              </h3>
-              <div class="grid gap-2">
-                <For each={items}>
-                  {(item) => (
-                    <div class="p-3 bg-bg-card border border-border rounded-lg">
-                      <p class="text-sm">{item.observation}</p>
-                      <div class="flex items-center gap-2 mt-1.5 text-xs text-text-dim">
-                        <Show when={item.confidence > 1}>
-                          <span>
-                            확신도: {"●".repeat(item.confidence)}
-                            {"○".repeat(5 - item.confidence)}
-                          </span>
-                        </Show>
-                        <span>{new Date(item.time_created).toLocaleDateString("ko-KR")}</span>
+      <Show when={styles() && styles()!.length > 0}>
+        <div class="space-y-6">
+          <For each={[...grouped().entries()]}>
+            {([category, items]) => (
+              <div>
+                <h3 class="text-sm font-medium text-text-dim mb-2">
+                  {categoryIcon[category] ?? "📝"} {categoryLabel[category] ?? category}
+                  <span class="ml-1 text-xs">({items.length})</span>
+                </h3>
+                <div class="grid gap-2">
+                  <For each={items}>
+                    {(item) => (
+                      <div class="p-3 bg-bg-card border border-border rounded-lg">
+                        <p class="text-sm">{item.observation}</p>
+                        <div class="flex items-center gap-2 mt-1.5 text-xs text-text-dim">
+                          <Show when={item.confidence > 1}>
+                            <span>
+                              확신도: {"●".repeat(item.confidence)}
+                              {"○".repeat(5 - item.confidence)}
+                            </span>
+                          </Show>
+                          <span>{new Date(item.time_created).toLocaleDateString("ko-KR")}</span>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </For>
+                    )}
+                  </For>
+                </div>
               </div>
-            </div>
-          )}
-        </For>
-      </div>
+            )}
+          </For>
+        </div>
+      </Show>
     </div>
   )
 }

@@ -133,6 +133,7 @@ export const api = {
     create: (body?: { title?: string; drama_id?: string }) => post<Session>("/session", body ?? {}),
     remove: (id: string) => del(`/session/${id}`),
     messages: (id: string) => get<Message[]>(`/session/${id}/messages`),
+    updateTitle: (id: string, title: string) => patch<Session>(`/session/${id}`, { title }),
   },
   chat: {
     stream: (sessionId: string, content: string) =>

@@ -1,11 +1,13 @@
 import { createSignal, createResource, For, Show } from "solid-js"
 import { A } from "@solidjs/router"
 import { api, type Drama } from "@/lib/api"
+import { ConfirmModal } from "@/components/confirm-modal"
 
 export default function Dashboard() {
   const [dramas, { refetch }] = createResource(() => api.drama.list())
   const [title, setTitle] = createSignal("")
   const [creating, setCreating] = createSignal(false)
+  const [deleteTarget, setDeleteTarget] = createSignal<Drama | null>(null)
 
   async function handleCreate(e: Event) {
     e.preventDefault()
@@ -17,9 +19,11 @@ export default function Dashboard() {
     refetch()
   }
 
-  async function handleRemove(id: string) {
-    if (!confirm("정말 삭제하시겠습니까?")) return
-    await api.drama.remove(id)
+  async function confirmDelete() {
+    const target = deleteTarget()
+    if (!target) return
+    setDeleteTarget(null)
+    await api.drama.remove(target.id)
     refetch()
   }
 
@@ -84,7 +88,7 @@ export default function Dashboard() {
                 </Show>
               </A>
               <button
-                onClick={() => handleRemove(drama.id)}
+                onClick={() => setDeleteTarget(drama)}
                 class="p-1.5 text-text-dim hover:text-danger opacity-0 group-hover:opacity-100 transition-all"
                 title="삭제"
               >
@@ -94,6 +98,14 @@ export default function Dashboard() {
           )}
         </For>
       </div>
+
+      <ConfirmModal
+        open={!!deleteTarget()}
+        title="드라마 삭제"
+        message={`"${deleteTarget()?.title}" 프로젝트를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   )
 }
