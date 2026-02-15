@@ -5,6 +5,7 @@ import { Rag } from "../rag"
 import { WriterStyle } from "../writer"
 import { Session } from "../session"
 import { Log } from "../util/log"
+import { EventBus } from "../server/routes/events"
 
 const log = Log.create({ service: "chat.tools" })
 const VALIDATION_ERROR = "입력값이 올바르지 않습니다. 필드를 확인해주세요."
@@ -120,6 +121,7 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
           drama_id: drama.id,
           content: Rag.serialize.drama(drama),
         }).catch((err) => ragError("tool.rag.index.create_drama", err, { drama_id: drama.id }))
+        EventBus.emit(drama.id, "drama")
         log.info("tool.create_drama", { drama_id: drama.id, title: drama.title })
         return `드라마 "${drama.title}" 프로젝트가 생성되었습니다. (ID: ${drama.id})`
       },
@@ -164,6 +166,7 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
           }).catch((err) => ragError("tool.rag.index.update_character", err, { entity_id: updated.id, drama_id: did }))
           const conflict = warning.conflicts.find((item) => item.entity_id !== existing.id)
           const message = warning.warning && conflict ? `\n${warning.warning}` : ""
+          EventBus.emit(did, "character")
           log.info("tool.update_character", { id: updated.id, name: updated.name })
           return `캐릭터 "${updated.name}" 정보가 업데이트되었습니다.${message}`
         }
@@ -174,6 +177,7 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
           drama_id: did,
           content: Rag.serialize.character(created),
         }).catch((err) => ragError("tool.rag.index.create_character", err, { entity_id: created.id, drama_id: did }))
+        EventBus.emit(did, "character")
         const message = warning.warning ? `\n${warning.warning}` : ""
         log.info("tool.create_character", { id: created.id, name: created.name })
         return `캐릭터 "${created.name}"이(가) 등록되었습니다.${message}`
@@ -196,6 +200,7 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
           drama_id: did,
           content: Rag.serialize.episode(ep),
         }).catch((err) => ragError("tool.rag.index.create_episode", err, { entity_id: ep.id, drama_id: did }))
+        EventBus.emit(did, "episode")
         log.info("tool.create_episode", { id: ep.id, number: ep.number })
         return `${ep.number}화 "${ep.title}" 에피소드가 생성되었습니다. (ID: ${ep.id})`
       },
@@ -270,6 +275,7 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
           drama_id: did,
           content: Rag.serialize.scene(updated),
         }).catch((err) => ragError("tool.rag.index.create_scene", err, { entity_id: updated.id, drama_id: did }))
+        EventBus.emit(did, "scene")
         log.info("tool.create_scene", { id: scene.id, episode_id: params.episode_id })
         return `S#${updated.number} 장면이 생성되었습니다. (장소: ${updated.location ?? "미정"})`
       },
@@ -296,6 +302,7 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
           drama_id: did,
           content: Rag.serialize.drama(drama),
         }).catch((err) => ragError("tool.rag.index.update_drama", err, { drama_id: did }))
+        EventBus.emit(did, "drama")
         log.info("tool.update_drama", { drama_id: drama.id })
         return `드라마 메타데이터가 업데이트되었습니다. (장르: ${drama.genre ?? "미정"}, 톤: ${drama.tone ?? "미정"})`
       },
@@ -346,6 +353,7 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
           drama_id: did,
           content: Rag.serialize.world(entry),
         }).catch((err) => ragError("tool.rag.index.create_world", err, { entity_id: entry.id, drama_id: did }))
+        EventBus.emit(did, "world")
         const message = warning.warning ? `\n${warning.warning}` : ""
         log.info("tool.create_world", { id: entry.id, category: entry.category })
         return `세계관 요소 [${entry.category}] "${entry.name}" 이(가) 기록되었습니다.${message}`
@@ -369,6 +377,7 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
           drama_id: did,
           content: Rag.serialize.plotPoint(point),
         }).catch((err) => ragError("tool.rag.index.create_plot_point", err, { entity_id: point.id, drama_id: did }))
+        EventBus.emit(did, "plot")
         log.info("tool.create_plot_point", { id: point.id, type: point.type })
         return `플롯 포인트 [${point.type}] "${point.description.slice(0, 40)}..." 이(가) 기록되었습니다.`
       },

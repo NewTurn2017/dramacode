@@ -1,20 +1,35 @@
 import { createSignal, createResource, createEffect, For, Show, Switch, Match, onCleanup } from "solid-js"
 import { useParams, A } from "@solidjs/router"
-import { api, type Session } from "@/lib/api"
+import { api, type Session, type Scene, type ScenePrompt } from "@/lib/api"
 import { ChatPanel } from "@/components/chat-panel"
 import { ConfirmModal } from "@/components/confirm-modal"
 import { ThinkingIndicator } from "@/components/thinking"
 import { RelationshipGraph } from "@/components/relationship-graph"
 
 type OpenTab = { id: string; label: string }
-type Section = "characters" | "episodes" | "world" | "plot"
+type Section = "characters" | "episodes" | "scenes" | "world" | "plot"
 
 const sections: { key: Section; label: string }[] = [
   { key: "characters", label: "등장인물" },
   { key: "episodes", label: "에피소드" },
+  { key: "scenes", label: "장면" },
   { key: "world", label: "세계관" },
   { key: "plot", label: "플롯" },
 ]
+
+const todLabel: Record<string, string> = {
+  DAY: "낮",
+  NIGHT: "밤",
+  DAWN: "새벽",
+  DUSK: "황혼",
+}
+
+function todColor(tod: string | null) {
+  if (tod === "NIGHT") return "bg-indigo-500/15 text-indigo-400"
+  if (tod === "DAWN") return "bg-amber-500/15 text-amber-400"
+  if (tod === "DUSK") return "bg-orange-500/15 text-orange-400"
+  return "bg-sky-500/15 text-sky-400"
+}
 
 const roleLabel: Record<string, string> = {
   protagonist: "주인공",
@@ -62,36 +77,75 @@ export default function DramaDetail() {
   const [drama] = createResource(dramaId, api.drama.get)
   const [characters, { refetch: refetchChars }] = createResource(dramaId, api.drama.characters)
   const [episodes, { refetch: refetchEps }] = createResource(dramaId, api.drama.episodes)
+  const [scenes, { refetch: refetchScenes }] = createResource(dramaId, api.drama.scenes)
   const [world, { refetch: refetchWorld }] = createResource(dramaId, api.drama.world)
   const [plotPoints, { refetch: refetchPlot }] = createResource(dramaId, api.drama.plotPoints)
 
-  const poll = setInterval(() => {
-    refetchChars()
-    refetchEps()
-    refetchWorld()
-    refetchPlot()
-  }, 5000)
-  onCleanup(() => clearInterval(poll))
+  let sse: EventSource | undefined
+  let fallback: ReturnType<typeof setInterval> | undefined
+
+  function connectSSE() {
+    if (sse) sse.close()
+    sse = new EventSource(`/api/events/${dramaId()}`)
+    sse.onmessage = (event) => {
+      const type = event.data
+      if (type === "connected") {
+        if (fallback) {
+          clearInterval(fallback)
+          fallback = undefined
+        }
+        return
+      }
+      if (type === "character") refetchChars()
+      if (type === "episode") refetchEps()
+      if (type === "scene") refetchScenes()
+      if (type === "world") refetchWorld()
+      if (type === "plot") refetchPlot()
+      if (type === "drama") {
+      }
+    }
+    sse.onerror = () => {
+      sse?.close()
+      sse = undefined
+      if (!fallback) {
+        fallback = setInterval(() => {
+          refetchChars()
+          refetchEps()
+          refetchScenes()
+          refetchWorld()
+          refetchPlot()
+        }, 5000)
+      }
+      setTimeout(connectSSE, 3000)
+    }
+  }
+  connectSSE()
+  onCleanup(() => {
+    sse?.close()
+    if (fallback) clearInterval(fallback)
+  })
 
   const [expanded, setExpanded] = createSignal<Record<Section, boolean>>({
     characters: true,
     episodes: false,
+    scenes: false,
     world: false,
     plot: false,
   })
   const [panelOpen, setPanelOpen] = createSignal(true)
   const [flash, setFlash] = createSignal(false)
 
-  let prev = { c: 0, e: 0, w: 0, p: 0 }
+  let prev = { c: 0, e: 0, s: 0, w: 0, p: 0 }
   createEffect(() => {
     const cur = {
       c: characters()?.length ?? 0,
       e: episodes()?.length ?? 0,
+      s: scenes()?.length ?? 0,
       w: world()?.length ?? 0,
       p: plotPoints()?.length ?? 0,
     }
-    const had = prev.c + prev.e + prev.w + prev.p > 0
-    const changed = cur.c !== prev.c || cur.e !== prev.e || cur.w !== prev.w || cur.p !== prev.p
+    const had = prev.c + prev.e + prev.s + prev.w + prev.p > 0
+    const changed = cur.c !== prev.c || cur.e !== prev.e || cur.s !== prev.s || cur.w !== prev.w || cur.p !== prev.p
     if (had && changed) {
       setFlash(true)
       setTimeout(() => setFlash(false), 600)
@@ -165,11 +219,36 @@ export default function DramaDetail() {
         return characters()?.length ?? 0
       case "episodes":
         return episodes()?.length ?? 0
+      case "scenes":
+        return scenes()?.length ?? 0
       case "world":
         return world()?.length ?? 0
       case "plot":
         return plotPoints()?.length ?? 0
     }
+  }
+
+  function groupedScenes() {
+    const all = scenes() ?? []
+    const groups = new Map<string, { number: number; scenes: Scene[] }>()
+    const eps = episodes() ?? []
+    for (const sc of all) {
+      if (!groups.has(sc.episode_id)) {
+        const ep = eps.find((e) => e.id === sc.episode_id)
+        groups.set(sc.episode_id, { number: ep?.number ?? 0, scenes: [] })
+      }
+      groups.get(sc.episode_id)!.scenes.push(sc)
+    }
+    return [...groups.entries()]
+      .sort((a, b) => a[1].number - b[1].number)
+      .map(([id, g]) => ({ episodeId: id, number: g.number, scenes: g.scenes.sort((a, b) => a.number - b.number) }))
+  }
+
+  const [copied, setCopied] = createSignal<string | null>(null)
+  function copyPrompt(sceneId: string, prompt: ScenePrompt) {
+    navigator.clipboard.writeText(JSON.stringify(prompt, null, 2))
+    setCopied(sceneId)
+    setTimeout(() => setCopied(null), 1500)
   }
 
   return (
@@ -297,6 +376,85 @@ export default function DramaDetail() {
                                       <Show when={ep.synopsis}>
                                         <p class="text-xs text-text-dim mt-1.5 line-clamp-2">{ep.synopsis}</p>
                                       </Show>
+                                    </div>
+                                  )}
+                                </For>
+                              </Match>
+
+                              <Match when={sec.key === "scenes"}>
+                                <Show when={!scenes()?.length}>
+                                  <p class="text-text-dim text-xs py-3 text-center">장면이 없습니다</p>
+                                </Show>
+                                <For each={groupedScenes()}>
+                                  {(group) => (
+                                    <div class="space-y-2">
+                                      <p class="text-[10px] font-semibold text-text-dim uppercase tracking-wider px-1 pt-1">
+                                        에피소드 {group.number}화
+                                      </p>
+                                      <For each={group.scenes}>
+                                        {(sc) => (
+                                          <div class="p-3 bg-bg-card border border-border/60 rounded-lg hover:border-border transition-colors">
+                                            <div class="flex items-center gap-2">
+                                              <span class="text-[10px] font-mono bg-accent/15 text-accent px-1.5 py-0.5 rounded">
+                                                S#{sc.number}
+                                              </span>
+                                              <Show when={sc.time_of_day}>
+                                                <span
+                                                  class={`text-[10px] px-1.5 py-0.5 rounded ${todColor(sc.time_of_day)}`}
+                                                >
+                                                  {todLabel[sc.time_of_day!] ?? sc.time_of_day}
+                                                </span>
+                                              </Show>
+                                              <Show when={sc.location}>
+                                                <span class="text-sm font-medium truncate">{sc.location}</span>
+                                              </Show>
+                                            </div>
+                                            <Show when={sc.description}>
+                                              <p class="text-xs text-text-dim mt-1.5 line-clamp-2">{sc.description}</p>
+                                            </Show>
+                                            <Show when={sc.image_prompt}>
+                                              {(prompt) => (
+                                                <div class="mt-2 bg-bg/50 border-l-2 border-accent/30 rounded-r-md px-2.5 py-2">
+                                                  <p class="text-[10px] font-semibold text-text-dim mb-1">
+                                                    이미지 프롬프트
+                                                  </p>
+                                                  <p class="text-[11px] text-text-dim line-clamp-2 leading-relaxed">
+                                                    {prompt().prompt}
+                                                  </p>
+                                                  <div class="flex items-center gap-1.5 mt-1.5">
+                                                    <span class="text-[9px] px-1 py-0.5 rounded bg-bg-hover text-text-dim">
+                                                      {prompt().style}
+                                                    </span>
+                                                    <span class="text-[9px] px-1 py-0.5 rounded bg-bg-hover text-text-dim">
+                                                      {prompt().mood}
+                                                    </span>
+                                                    <span class="text-[9px] px-1 py-0.5 rounded bg-bg-hover text-text-dim">
+                                                      {prompt().resolution}
+                                                    </span>
+                                                    <button
+                                                      onClick={() => copyPrompt(sc.id, prompt())}
+                                                      class="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent hover:bg-accent/20 transition-colors"
+                                                    >
+                                                      {copied() === sc.id ? "복사됨" : "프롬프트 복사"}
+                                                    </button>
+                                                  </div>
+                                                </div>
+                                              )}
+                                            </Show>
+                                            <Show when={sc.characters_present?.length}>
+                                              <div class="flex flex-wrap gap-1 mt-2">
+                                                <For each={sc.characters_present}>
+                                                  {(name) => (
+                                                    <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-bg-hover text-text-dim">
+                                                      {name}
+                                                    </span>
+                                                  )}
+                                                </For>
+                                              </div>
+                                            </Show>
+                                          </div>
+                                        )}
+                                      </For>
                                     </div>
                                   )}
                                 </For>
