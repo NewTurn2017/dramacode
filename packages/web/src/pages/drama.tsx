@@ -9,11 +9,11 @@ import { RelationshipGraph } from "@/components/relationship-graph"
 type OpenTab = { id: string; label: string }
 type Section = "characters" | "episodes" | "world" | "plot"
 
-const sections: { key: Section; label: string; icon: string }[] = [
-  { key: "characters", label: "등장인물", icon: "👤" },
-  { key: "episodes", label: "에피소드", icon: "📺" },
-  { key: "world", label: "세계관", icon: "🌍" },
-  { key: "plot", label: "플롯", icon: "📊" },
+const sections: { key: Section; label: string }[] = [
+  { key: "characters", label: "등장인물" },
+  { key: "episodes", label: "에피소드" },
+  { key: "world", label: "세계관" },
+  { key: "plot", label: "플롯" },
 ]
 
 const roleLabel: Record<string, string> = {
@@ -240,7 +240,6 @@ export default function DramaDetail() {
                           >
                             ▶
                           </span>
-                          <span>{sec.icon}</span>
                           <span class="font-medium">{sec.label}</span>
                           <span class="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-bg-hover text-text-dim min-w-[1.25rem] text-center">
                             {count(sec.key)}
@@ -354,7 +353,6 @@ export default function DramaDetail() {
                   <Show when={(characters() ?? []).length >= 2}>
                     <div class="border-b border-border/50">
                       <div class="px-4 py-2.5 flex items-center gap-2">
-                        <span>🔗</span>
                         <span class="text-sm font-medium">인물 관계도</span>
                       </div>
                       <div class="px-3 pb-3">
@@ -455,7 +453,6 @@ export default function DramaDetail() {
                     fallback={
                       <div class="flex-1 flex items-center justify-center">
                         <div class="text-center">
-                          <p class="text-3xl mb-3">✍️</p>
                           <p class="text-text-dim text-sm">새 대화를 시작하거나 기존 세션을 선택하세요</p>
                         </div>
                       </div>

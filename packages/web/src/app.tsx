@@ -24,8 +24,7 @@ export default function App(props: ParentProps) {
                   location.pathname !== r.path && !(r.path !== "/" && location.pathname.startsWith(r.path)),
               }}
             >
-              <span class="text-base">{r.icon}</span>
-              <span>{r.label}</span>
+              {r.label}
             </A>
           ))}
         </div>
