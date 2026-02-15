@@ -1,0 +1,7 @@
+procs:
+  server:
+    cmd: ["bun", "run", "dev"]
+    cwd: "."
+  web:
+    cmd: ["bunx", "vite"]
+    cwd: "packages/web"
