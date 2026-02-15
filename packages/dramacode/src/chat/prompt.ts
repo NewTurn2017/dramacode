@@ -1,3 +1,5 @@
+import { Drama, Episode, Character, World, PlotPoint } from "../drama"
+
 export namespace DramaPrompt {
   export const system = `당신은 **DRAMACODE** — 한국 드라마 각본 전문 AI 작가입니다.
 
@@ -48,6 +50,66 @@ TV 드라마 시리즈의 각본 작업을 돕는 시니어 작가. 사용자(�
     const parts = [system]
     if (dramaTitle) parts.push(`\n현재 작업 중인 드라마: **${dramaTitle}**`)
     if (episodeNum) parts.push(`현재 에피소드: ${episodeNum}화`)
+    return parts.join("\n")
+  }
+
+  export function buildContext(dramaId?: string | null): string {
+    if (!dramaId) return system
+
+    const drama = Drama.get(dramaId)
+    const characters = Character.listByDrama(dramaId)
+    const episodes = Episode.listByDrama(dramaId)
+    const unresolved = PlotPoint.listUnresolved(dramaId)
+    const world = World.listByDrama(dramaId)
+    const parts = [system]
+
+    // Drama header
+    parts.push(`\n## 현재 프로젝트: ${drama.title}`)
+    if (drama.genre) parts.push(`- 장르: ${drama.genre}`)
+    if (drama.tone) parts.push(`- 톤: ${drama.tone}`)
+    if (drama.logline) parts.push(`- 로그라인: ${drama.logline}`)
+    if (drama.total_episodes) parts.push(`- 총 ${drama.total_episodes}화 예정`)
+    if (drama.setting) parts.push(`- 배경: ${drama.setting}`)
+
+    // Characters
+    if (characters.length) {
+      parts.push(`\n### 등장인물 (${characters.length}명)`)
+      for (const c of characters) {
+        const role = c.role ? ` (${c.role})` : ""
+        const occ = c.occupation ? ` — ${c.occupation}` : ""
+        const personality = c.personality ? `, ${c.personality}` : ""
+        parts.push(`- **${c.name}**${role}${occ}${personality}`)
+        if (c.backstory) parts.push(`  배경: ${c.backstory.slice(0, 200)}`)
+        if (c.arc) parts.push(`  아크: ${c.arc.slice(0, 150)}`)
+      }
+    }
+
+    // Episodes
+    if (episodes.length) {
+      parts.push(`\n### 에피소드 (${episodes.length}화)`)
+      for (const ep of episodes) {
+        const syn = ep.synopsis ? ` — ${ep.synopsis.slice(0, 100)}` : ""
+        parts.push(`- ${ep.number}화: "${ep.title}"${syn}`)
+      }
+    }
+
+    // Unresolved plot points
+    if (unresolved.length) {
+      parts.push(`\n### 미해결 복선/갈등 (${unresolved.length}건)`)
+      for (const pp of unresolved) {
+        parts.push(`- [${pp.type}] ${pp.description.slice(0, 150)}`)
+      }
+    }
+
+    // World elements
+    if (world.length) {
+      parts.push(`\n### 세계관`)
+      for (const w of world) {
+        const desc = w.description ? ` — ${w.description.slice(0, 100)}` : ""
+        parts.push(`- [${w.category}] ${w.name}${desc}`)
+      }
+    }
+
     return parts.join("\n")
   }
 }

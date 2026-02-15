@@ -24,13 +24,7 @@ export namespace Chat {
     }))
   }
 
-  export async function send(input: {
-    session_id: string
-    content: string
-    model?: string
-    drama_title?: string
-    episode_num?: number
-  }) {
+  export async function send(input: { session_id: string; content: string; model?: string }) {
     const openai = await provider()
     const model = input.model ?? "gpt-5.2"
 
@@ -42,7 +36,7 @@ export namespace Chat {
 
     const session = Session.get(input.session_id)
     const history = Session.messages(input.session_id)
-    const system = DramaPrompt.withContext(input.drama_title, input.episode_num)
+    const system = DramaPrompt.buildContext(session.drama_id)
     const tools = dramaTools({ session_id: input.session_id, drama_id: session.drama_id })
 
     log.info("chat.send", {
@@ -74,13 +68,7 @@ export namespace Chat {
     return { message: msg, stream: result }
   }
 
-  export async function stream(input: {
-    session_id: string
-    content: string
-    model?: string
-    drama_title?: string
-    episode_num?: number
-  }) {
+  export async function stream(input: { session_id: string; content: string; model?: string }) {
     const openai = await provider()
     const model = input.model ?? "gpt-5.2"
 
@@ -92,7 +80,7 @@ export namespace Chat {
 
     const session = Session.get(input.session_id)
     const history = Session.messages(input.session_id)
-    const system = DramaPrompt.withContext(input.drama_title, input.episode_num)
+    const system = DramaPrompt.buildContext(session.drama_id)
     const tools = dramaTools({ session_id: input.session_id, drama_id: session.drama_id })
 
     return streamText({

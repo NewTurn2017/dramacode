@@ -19,8 +19,6 @@ export function ChatRoutes() {
         session_id: sessionID,
         content: body.content,
         model: body.model,
-        drama_title: body.drama_title,
-        episode_num: body.episode_num,
       })
 
       c.header("Content-Type", "text/plain; charset=utf-8")
@@ -47,8 +45,6 @@ export function ChatRoutes() {
         session_id: sessionID,
         content: body.content,
         model: body.model,
-        drama_title: body.drama_title,
-        episode_num: body.episode_num,
       })
 
       return c.json(message)
