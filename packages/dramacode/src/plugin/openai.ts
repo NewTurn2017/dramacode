@@ -378,9 +378,10 @@ export namespace OpenAIAuth {
   }
 
   export async function deviceLogin() {
+    const ua = "dramacode/0.1.0"
     const start = await fetch(`${ISSUER}/api/accounts/deviceauth/usercode`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "User-Agent": ua },
       body: JSON.stringify({ client_id: CLIENT_ID }),
     })
     if (!start.ok) throw new Error("Failed to initiate device authorization")
@@ -392,12 +393,16 @@ export namespace OpenAIAuth {
     }
     const wait = Math.max(parseInt(info.interval) || 5, 1) * 1000
 
-    console.log(`Open ${ISSUER}/codex/device and enter code: ${info.user_code}`)
+    const url = `${ISSUER}/codex/device`
+    console.log(`\n  1. Open: ${url}`)
+    console.log(`  2. Enter code: ${info.user_code}\n`)
+    await open(url).catch(() => undefined)
+    console.log("  Waiting for authorization...")
 
     while (true) {
       const poll = await fetch(`${ISSUER}/api/accounts/deviceauth/token`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "User-Agent": ua },
         body: JSON.stringify({
           device_auth_id: info.device_auth_id,
           user_code: info.user_code,
