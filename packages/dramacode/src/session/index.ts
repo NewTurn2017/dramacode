@@ -42,6 +42,18 @@ export namespace Session {
     )
   }
 
+  export function listByDrama(dramaID: string, limit = 50): Info[] {
+    return Database.use((db) =>
+      db
+        .select()
+        .from(SessionTable)
+        .where(eq(SessionTable.drama_id, dramaID))
+        .orderBy(desc(SessionTable.time_updated))
+        .limit(limit)
+        .all(),
+    )
+  }
+
   export function remove(id: string) {
     Database.use((db) => {
       db.delete(SessionTable).where(eq(SessionTable.id, id)).run()

@@ -5,6 +5,8 @@ export function SessionRoutes() {
   return new Hono()
     .get("/", (c) => {
       const limit = Number(c.req.query("limit") ?? "50")
+      const dramaId = c.req.query("drama_id")
+      if (dramaId) return c.json(Session.listByDrama(dramaId, limit))
       return c.json(Session.list(limit))
     })
     .post("/", async (c) => {

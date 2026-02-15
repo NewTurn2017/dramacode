@@ -128,7 +128,7 @@ export const api = {
     plotPoints: (id: string) => get<PlotPoint[]>(`/drama/${id}/plot-points`),
   },
   session: {
-    list: () => get<Session[]>("/session"),
+    list: (dramaId?: string) => get<Session[]>(dramaId ? `/session?drama_id=${dramaId}` : "/session"),
     get: (id: string) => get<Session>(`/session/${id}`),
     create: (body?: { title?: string; drama_id?: string }) => post<Session>("/session", body ?? {}),
     remove: (id: string) => del(`/session/${id}`),
