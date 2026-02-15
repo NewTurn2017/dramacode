@@ -3,6 +3,48 @@ import { Session } from "../../session"
 import { Chat } from "../../chat"
 import { createInterface } from "readline"
 
+const THINKING_FRAMES = [
+  "✍️  구상 중",
+  "✍️  구상 중.",
+  "✍️  구상 중..",
+  "✍️  구상 중...",
+  "📖 이야기를 짜는 중",
+  "📖 이야기를 짜는 중.",
+  "📖 이야기를 짜는 중..",
+  "📖 이야기를 짜는 중...",
+  "🎭 캐릭터를 떠올리는 중",
+  "🎭 캐릭터를 떠올리는 중.",
+  "🎭 캐릭터를 떠올리는 중..",
+  "🎭 캐릭터를 떠올리는 중...",
+  "🎬 장면을 그리는 중",
+  "🎬 장면을 그리는 중.",
+  "🎬 장면을 그리는 중..",
+  "🎬 장면을 그리는 중...",
+  "💭 대사를 다듬는 중",
+  "💭 대사를 다듬는 중.",
+  "💭 대사를 다듬는 중..",
+  "💭 대사를 다듬는 중...",
+  "🌙 복선을 심는 중",
+  "🌙 복선을 심는 중.",
+  "🌙 복선을 심는 중..",
+  "🌙 복선을 심는 중...",
+]
+
+function startThinking() {
+  let frame = 0
+  let maxLen = 0
+  const interval = setInterval(() => {
+    const text = THINKING_FRAMES[frame % THINKING_FRAMES.length]!
+    maxLen = Math.max(maxLen, text.length)
+    process.stdout.write(`\r  ${text}${" ".repeat(maxLen - text.length)}`)
+    frame++
+  }, 280)
+  return () => {
+    clearInterval(interval)
+    process.stdout.write(`\r${" ".repeat(maxLen + 4)}\r`)
+  }
+}
+
 export const ChatCommand: CommandModule = {
   command: "chat [session]",
   describe: "Start a drama writing conversation",
@@ -59,9 +101,10 @@ export const ChatCommand: CommandModule = {
         const trimmed = input.trim()
         if (!trimmed) return prompt()
 
-        try {
-          process.stdout.write("\nDRAMACODE > ")
+        const stopThinking = startThinking()
+        let started = false
 
+        try {
           const result = await Chat.stream({
             session_id: session.id,
             content: trimmed,
@@ -70,17 +113,30 @@ export const ChatCommand: CommandModule = {
 
           for await (const part of result.fullStream) {
             if (part.type === "text-delta") {
+              if (!started) {
+                stopThinking()
+                process.stdout.write("\nDRAMACODE > ")
+                started = true
+              }
               process.stdout.write(part.text)
             } else if (part.type === "tool-call") {
+              if (!started) {
+                stopThinking()
+                process.stdout.write("\nDRAMACODE > ")
+                started = true
+              }
               process.stdout.write(`\n  🔧 ${part.toolName}...`)
             } else if (part.type === "tool-result") {
               process.stdout.write(` ✅\n`)
             }
           }
 
+          if (!started) stopThinking()
+
           console.log("\n")
           prompt()
         } catch (e) {
+          stopThinking()
           const msg = e instanceof Error ? e.message : String(e)
           console.error(`\n  ❌ 오류: ${msg}`)
           console.log("")
