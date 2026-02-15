@@ -15,7 +15,7 @@ export const ChatCommand: CommandModule = {
       .option("model", {
         describe: "Model to use",
         type: "string",
-        default: "gpt-4o",
+        default: "gpt-5.2",
       })
       .option("title", {
         describe: "Title for new session",

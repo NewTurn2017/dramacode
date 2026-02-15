@@ -1,6 +1,7 @@
 import { streamText, stepCountIs, type ModelMessage } from "ai"
 import { createOpenAI } from "@ai-sdk/openai"
-import { Auth } from "../auth"
+import { Auth, OAUTH_DUMMY_KEY } from "../auth"
+import { OpenAIAuth } from "../plugin/openai"
 import { DramaPrompt } from "./prompt"
 import { dramaTools } from "./tools"
 import { Session } from "../session"
@@ -12,8 +13,8 @@ export namespace Chat {
   async function provider() {
     const auth = await Auth.get("openai")
     if (!auth) throw new Error("OpenAI not authenticated. Run: dramacode auth login")
-    const key = auth.type === "api" ? auth.key : auth.access
-    return createOpenAI({ apiKey: key })
+    if (auth.type === "api") return createOpenAI({ apiKey: auth.key })
+    return createOpenAI({ apiKey: OAUTH_DUMMY_KEY, fetch: OpenAIAuth.createFetch("openai") })
   }
 
   function toModel(messages: Session.Message[]): ModelMessage[] {
@@ -31,7 +32,7 @@ export namespace Chat {
     episode_num?: number
   }) {
     const openai = await provider()
-    const model = input.model ?? "gpt-4o"
+    const model = input.model ?? "gpt-5.2"
 
     Session.addMessage({
       session_id: input.session_id,
@@ -52,10 +53,10 @@ export namespace Chat {
 
     const result = streamText({
       model: openai(model),
-      system,
       messages: toModel(history),
       tools,
       stopWhen: stepCountIs(5),
+      providerOptions: { openai: { instructions: system, store: false } },
     })
 
     const text = await result.text
@@ -81,7 +82,7 @@ export namespace Chat {
     episode_num?: number
   }) {
     const openai = await provider()
-    const model = input.model ?? "gpt-4o"
+    const model = input.model ?? "gpt-5.2"
 
     Session.addMessage({
       session_id: input.session_id,
@@ -96,10 +97,10 @@ export namespace Chat {
 
     return streamText({
       model: openai(model),
-      system,
       messages: toModel(history),
       tools,
       stopWhen: stepCountIs(5),
+      providerOptions: { openai: { instructions: system, store: false } },
       async onFinish({ text }) {
         Session.addMessage({
           session_id: input.session_id,

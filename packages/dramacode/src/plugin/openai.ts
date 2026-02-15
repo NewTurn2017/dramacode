@@ -6,6 +6,7 @@ const log = Log.create({ service: "plugin.openai" })
 
 const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 const ISSUER = "https://auth.openai.com"
+const CODEX_API_ENDPOINT = "https://chatgpt.com/backend-api/codex/responses"
 const OAUTH_PORT = 1455
 const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000
 
@@ -443,8 +444,8 @@ export namespace OpenAIAuth {
     return authResult((await response.json()) as Token)
   }
 
-  export function createFetch(providerID: string) {
-    return async (requestInput: string | URL | Request, init?: RequestInit) => {
+  export function createFetch(providerID: string): typeof globalThis.fetch {
+    const customFetch = async (requestInput: string | URL | Request, init?: RequestInit) => {
       const info = await Auth.get(providerID)
       const headers = makeHeaders(init?.headers)
       if (!info) return fetch(requestInput, { ...init, headers })
@@ -469,7 +470,22 @@ export namespace OpenAIAuth {
 
       headers.set("authorization", `Bearer ${auth.access}`)
       if (auth.accountId) headers.set("ChatGPT-Account-Id", auth.accountId)
-      return fetch(requestInput, { ...init, headers })
+
+      const parsed = new URL(
+        typeof requestInput === "string"
+          ? requestInput
+          : requestInput instanceof URL
+            ? requestInput.href
+            : requestInput.url,
+      )
+      const url =
+        parsed.pathname.includes("/v1/responses") || parsed.pathname.includes("/chat/completions")
+          ? new URL(CODEX_API_ENDPOINT)
+          : parsed
+
+      return fetch(url, { ...init, headers })
     }
+    customFetch.preconnect = fetch.preconnect
+    return customFetch
   }
 }
