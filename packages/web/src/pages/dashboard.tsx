@@ -1,6 +1,7 @@
 import { createSignal, createResource, For, Show } from "solid-js"
 import { A } from "@solidjs/router"
 import { api, type Drama } from "@/lib/api"
+import { runWithPending } from "@/lib/async-guard"
 import { ConfirmModal } from "@/components/confirm-modal"
 
 export default function Dashboard() {
@@ -12,11 +13,11 @@ export default function Dashboard() {
   async function handleCreate(e: Event) {
     e.preventDefault()
     if (!title().trim()) return
-    setCreating(true)
-    await api.drama.create({ title: title() })
-    setTitle("")
-    setCreating(false)
-    refetch()
+    await runWithPending(setCreating, async () => {
+      await api.drama.create({ title: title() })
+      setTitle("")
+      refetch()
+    })
   }
 
   async function confirmDelete() {

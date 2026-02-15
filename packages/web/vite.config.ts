@@ -13,6 +13,11 @@ export default defineConfig({
   server: {
     port: 4098,
     proxy: {
+      "/api/events": {
+        target: "http://localhost:4097",
+        rewrite: (p) => p.replace(/^\/api/, ""),
+        headers: { "X-Accel-Buffering": "no" },
+      },
       "/api": {
         target: "http://localhost:4097",
         rewrite: (p) => p.replace(/^\/api/, ""),

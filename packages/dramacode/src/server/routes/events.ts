@@ -1,5 +1,4 @@
 import { Hono } from "hono"
-import { stream } from "hono/streaming"
 
 export const EventBus = {
   listeners: new Map<string, Set<(event: string) => void>>(),
@@ -21,33 +20,45 @@ export const EventBus = {
 }
 
 export function EventRoutes() {
+  const encoder = new TextEncoder()
+
   return new Hono().get("/:dramaId", (c) => {
     const dramaId = c.req.param("dramaId")
-    c.header("Content-Type", "text/event-stream")
-    c.header("Cache-Control", "no-cache")
-    c.header("Connection", "keep-alive")
 
-    return stream(c, async (s) => {
-      await s.write("data: connected\n\n")
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode("data: connected\n\n"))
 
-      const unsub = EventBus.subscribe(dramaId, async (type) => {
-        try {
-          await s.write(`data: ${type}\n\n`)
-        } catch {}
-      })
+        const unsub = EventBus.subscribe(dramaId, (type) => {
+          try {
+            controller.enqueue(encoder.encode(`data: ${type}\n\n`))
+          } catch {}
+        })
 
-      const ping = setInterval(async () => {
-        try {
-          await s.write(": ping\n\n")
-        } catch {}
-      }, 30000)
+        const ping = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode(": ping\n\n"))
+          } catch {}
+        }, 15000)
 
-      s.onAbort(() => {
-        unsub()
-        clearInterval(ping)
-      })
+        const signal = c.req.raw.signal as EventTarget
+        signal.addEventListener("abort", () => {
+          unsub()
+          clearInterval(ping)
+          try {
+            controller.close()
+          } catch {}
+        })
+      },
+    })
 
-      await new Promise(() => {})
+    return new Response(body, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      },
     })
   })
 }

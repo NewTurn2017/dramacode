@@ -85,49 +85,70 @@ export default function DramaDetail() {
   const [plotPoints, { refetch: refetchPlot }] = createResource(dramaId, api.drama.plotPoints)
 
   let sse: EventSource | undefined
-  let fallback: ReturnType<typeof setInterval> | undefined
+  let pollTimer: ReturnType<typeof setInterval> | undefined
+  let reconnectTimer: ReturnType<typeof setTimeout> | undefined
 
-  function connectSSE() {
-    if (sse) sse.close()
-    sse = new EventSource(`/api/events/${dramaId()}`)
-    sse.onmessage = (event) => {
-      const type = event.data
-      if (type === "connected") {
-        if (fallback) {
-          clearInterval(fallback)
-          fallback = undefined
+  function refetchAll() {
+    refetchChars()
+    refetchEps()
+    refetchScenes()
+    refetchWorld()
+    refetchPlot()
+    refetchArcs()
+  }
+
+  function handleEvent(type: string) {
+    if (type === "character") refetchChars()
+    else if (type === "episode") refetchEps()
+    else if (type === "scene") refetchScenes()
+    else if (type === "world") refetchWorld()
+    else if (type === "plot") refetchPlot()
+    else if (type === "arc") refetchArcs()
+  }
+
+  function setPollInterval(ms: number) {
+    if (pollTimer) clearInterval(pollTimer)
+    pollTimer = setInterval(refetchAll, ms)
+  }
+
+  createEffect(() => {
+    const id = dramaId()
+    if (!id) return
+
+    setPollInterval(4000)
+
+    const connect = () => {
+      sse?.close()
+      sse = new EventSource(`/api/events/${id}`)
+
+      sse.onmessage = (event) => {
+        if (event.data === "connected") {
+          setPollInterval(20000)
+          return
         }
-        return
+        handleEvent(event.data)
       }
-      if (type === "character") refetchChars()
-      if (type === "episode") refetchEps()
-      if (type === "scene") refetchScenes()
-      if (type === "world") refetchWorld()
-      if (type === "plot") refetchPlot()
-      if (type === "arc") refetchArcs()
-      if (type === "drama") {
+
+      sse.onerror = () => {
+        sse?.close()
+        sse = undefined
+        setPollInterval(4000)
+        reconnectTimer = setTimeout(connect, 5000)
       }
     }
-    sse.onerror = () => {
+
+    connect()
+
+    onCleanup(() => {
       sse?.close()
       sse = undefined
-      if (!fallback) {
-        fallback = setInterval(() => {
-          refetchChars()
-          refetchEps()
-          refetchScenes()
-          refetchWorld()
-          refetchPlot()
-          refetchArcs()
-        }, 5000)
+      if (pollTimer) clearInterval(pollTimer)
+      pollTimer = undefined
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer)
+        reconnectTimer = undefined
       }
-      setTimeout(connectSSE, 3000)
-    }
-  }
-  connectSSE()
-  onCleanup(() => {
-    sse?.close()
-    if (fallback) clearInterval(fallback)
+    })
   })
 
   const [expanded, setExpanded] = createSignal<Record<Section, boolean>>({

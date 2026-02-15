@@ -1,5 +1,6 @@
 import { createSignal, createEffect, For, Show, onMount } from "solid-js"
 import { api, type Message } from "@/lib/api"
+import { runWithPending } from "@/lib/async-guard"
 import { Markdown } from "./markdown"
 import { ThinkingIndicator } from "./thinking"
 
@@ -28,35 +29,35 @@ export function ChatPanel(props: { sessionId: string; visible: boolean; onTitleC
   })
 
   async function runGreet() {
-    setStreaming(true)
-    setStreamText("")
-    const res = await api.chat.greet(props.sessionId)
-    if (!res.ok || !res.body) {
-      setStreaming(false)
-      return
-    }
-    const reader = res.body.getReader()
-    const decoder = new TextDecoder()
-    let full = ""
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      full += decoder.decode(value, { stream: true })
-      setStreamText(full)
-    }
-    setStreamText("")
-    setStreaming(false)
-    if (full.trim()) {
-      setMessages([
-        {
-          id: `greet-${Date.now()}`,
-          session_id: props.sessionId,
-          role: "assistant",
-          content: full,
-          time_created: Date.now(),
-        },
-      ])
-    }
+    await runWithPending(setStreaming, async () => {
+      setStreamText("")
+      try {
+        const res = await api.chat.greet(props.sessionId)
+        if (!res.ok || !res.body) return
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let full = ""
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          full += decoder.decode(value, { stream: true })
+          setStreamText(full)
+        }
+        if (full.trim()) {
+          setMessages([
+            {
+              id: `greet-${Date.now()}`,
+              session_id: props.sessionId,
+              role: "assistant",
+              content: full,
+              time_created: Date.now(),
+            },
+          ])
+        }
+      } finally {
+        setStreamText("")
+      }
+    }).catch(() => undefined)
   }
 
   onMount(async () => {
@@ -64,7 +65,7 @@ export function ChatPanel(props: { sessionId: string; visible: boolean; onTitleC
     setMessages(msgs)
     setLoaded(true)
     requestAnimationFrame(() => scrollToBottom(true))
-    if (msgs.length === 0) runGreet()
+    if (msgs.length === 0) void runGreet()
   })
 
   createEffect(() => {
@@ -92,46 +93,45 @@ export function ChatPanel(props: { sessionId: string; visible: boolean; onTitleC
         time_created: Date.now(),
       },
     ])
-    setStreaming(true)
-    setStreamText("")
+    await runWithPending(setStreaming, async () => {
+      setStreamText("")
+      try {
+        const res = await api.chat.stream(props.sessionId, text)
+        if (!res.ok || !res.body) return
 
-    const res = await api.chat.stream(props.sessionId, text)
-    if (!res.ok || !res.body) {
-      setStreaming(false)
-      return
-    }
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let full = ""
 
-    const reader = res.body.getReader()
-    const decoder = new TextDecoder()
-    let full = ""
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          full += decoder.decode(value, { stream: true })
+          setStreamText(full)
+        }
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      full += decoder.decode(value, { stream: true })
-      setStreamText(full)
-    }
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `temp-assistant-${Date.now()}`,
+            session_id: props.sessionId,
+            role: "assistant",
+            content: full,
+            time_created: Date.now(),
+          },
+        ])
 
-    setStreamText("")
-    setStreaming(false)
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `temp-assistant-${Date.now()}`,
-        session_id: props.sessionId,
-        role: "assistant",
-        content: full,
-        time_created: Date.now(),
-      },
-    ])
+        if (messages().filter((m) => m.role === "user").length <= 1) {
+          const label = text.length > 30 ? text.slice(0, 30) + "…" : text
+          await api.session.updateTitle(props.sessionId, label)
+          props.onTitleChange?.(label)
+        }
 
-    if (messages().filter((m) => m.role === "user").length <= 1) {
-      const label = text.length > 30 ? text.slice(0, 30) + "…" : text
-      await api.session.updateTitle(props.sessionId, label)
-      props.onTitleChange?.(label)
-    }
-
-    inputRef?.focus()
+        inputRef?.focus()
+      } finally {
+        setStreamText("")
+      }
+    }).catch(() => undefined)
   }
 
   function handleKeyDown(e: KeyboardEvent) {
