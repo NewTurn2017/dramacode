@@ -24,5 +24,6 @@ export const ServeCommand: CommandModule = {
       hostname: argv.hostname as string,
     })
     console.log(`Server listening on ${server.url}`)
+    await new Promise(() => {})
   },
 }
