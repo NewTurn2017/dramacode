@@ -5,6 +5,7 @@ import { Auth } from "../auth"
 import { lazy } from "../util/lazy"
 import { SessionRoutes } from "./routes/session"
 import { ChatRoutes } from "./routes/chat"
+import { DramaRoutes, EpisodeRoutes, SceneRoutes } from "./routes/drama"
 import { NotFoundError } from "../storage/db"
 
 const log = Log.create({ service: "server" })
@@ -43,6 +44,9 @@ export namespace Server {
         .get("/health", (c) => c.json({ ok: true }))
         .route("/session", SessionRoutes())
         .route("/chat", ChatRoutes())
+        .route("/drama", DramaRoutes())
+        .route("/episode", EpisodeRoutes())
+        .route("/scene", SceneRoutes())
         .put("/auth/:providerID", async (c) => {
           const providerID = c.req.param("providerID")
           const body = await c.req.json()

@@ -4,6 +4,7 @@ import { Log } from "./util/log"
 import { AuthCommand } from "./cli/cmd/auth"
 import { ServeCommand } from "./cli/cmd/serve"
 import { ChatCommand } from "./cli/cmd/chat"
+import { DramaCommand } from "./cli/cmd/drama"
 
 const VERSION = "0.1.0"
 
@@ -47,6 +48,7 @@ const cli = yargs(hideBin(process.argv))
   .command(AuthCommand)
   .command(ServeCommand)
   .command(ChatCommand)
+  .command(DramaCommand)
   .fail((msg, err) => {
     if (msg?.startsWith("Unknown argument") || msg?.startsWith("Not enough non-option arguments")) {
       cli.showHelp("log")
