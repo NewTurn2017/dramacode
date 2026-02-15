@@ -1,0 +1,23 @@
+{
+  "name": "dramacode-web",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@solidjs/router": "^0.15.3",
+    "solid-js": "^1.9.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.10",
+    "tailwindcss": "^4.1.10",
+    "typescript": "5.8.2",
+    "vite": "^6.3.5",
+    "vite-plugin-solid": "^2.11.6"
+  }
+}
