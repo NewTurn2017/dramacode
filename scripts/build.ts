@@ -82,14 +82,10 @@ console.log("\nCreating release archives...")
 
 // 1) zip — always produced (used by auto-updater)
 const zipPath = path.join(root, zipName)
-try {
+if (isWindows) {
+  await $`powershell -Command "Compress-Archive -Path '${dist}\\*' -DestinationPath '${zipPath}' -Force"`.quiet()
+} else {
   await $`zip -r -j ${zipPath} ${dist}`.quiet()
-} catch {
-  try {
-    await $`tar -a -cf ${zipPath} -C ${dist} .`.quiet()
-  } catch {
-    console.warn("  Warning: zip/tar not available, skipping archive")
-  }
 }
 if (existsSync(zipPath)) console.log(`  ${zipName}`)
 
