@@ -15,13 +15,13 @@ jobs:
         include:
           - os: macos-latest
             target: bun-darwin-arm64
-            asset: dramacode-darwin-arm64.zip
+            assets: "dramacode-darwin-arm64.zip DRAMACODE-mac-arm64.dmg"
           - os: macos-latest
             target: bun-darwin-x64
-            asset: dramacode-darwin-x64.zip
+            assets: "dramacode-darwin-x64.zip DRAMACODE-mac-x64.dmg"
           - os: windows-latest
             target: bun-windows-x64
-            asset: dramacode-windows-x64.zip
+            assets: "dramacode-windows-x64.zip"
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -49,11 +49,13 @@ jobs:
         env:
           VERSION: ${{ github.ref_name }}
 
-      - name: Upload artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.asset }}
-          path: ${{ matrix.asset }}
+          name: release-${{ matrix.target }}
+          path: |
+            *.zip
+            *.dmg
 
   release:
     needs: build
@@ -75,3 +77,4 @@ jobs:
           generate_release_notes: true
           files: |
             artifacts/**/*.zip
+            artifacts/**/*.dmg

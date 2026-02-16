@@ -8,66 +8,51 @@ AI 기반 드라마 각본 도구. OpenAI를 활용하여 캐릭터, 에피소�
 
 [최신 릴리스 페이지](https://github.com/NewTurn2017/dramacode/releases/latest)에서 본인 컴퓨터에 맞는 파일을 다운로드합니다.
 
-| 운영체제 | 파일 |
-|----------|------|
-| **Mac (Apple Silicon)** — M1, M2, M3, M4 칩 | `dramacode-darwin-arm64.zip` |
-| **Mac (Intel)** — 2020년 이전 Mac | `dramacode-darwin-x64.zip` |
+| 운영체제 | 다운로드 파일 |
+|----------|--------------|
+| **Mac (Apple Silicon)** — M1, M2, M3, M4 칩 | `DRAMACODE-mac-arm64.dmg` |
+| **Mac (Intel)** — 2020년 이전 Mac | `DRAMACODE-mac-x64.dmg` |
 | **Windows** | `dramacode-windows-x64.zip` |
 
 > **내 Mac이 어떤 칩인지 모르겠다면?**
-> 좌측 상단 Apple 메뉴 →「이 Mac에 관하여」→ 칩 항목이 "Apple M~"이면 Apple Silicon, "Intel"이면 Intel입니다.
+> 좌측 상단  메뉴 →「이 Mac에 관하여」→ 칩 항목이 "Apple M~"이면 Apple Silicon, "Intel"이면 Intel입니다.
 
-### 2. 압축 해제
+### 2. 설치
 
-- **Mac**: 다운로드한 `.zip` 파일을 더블 클릭하면 자동으로 압축이 풀립니다.
-- **Windows**: `.zip` 파일을 우클릭 →「압축 풀기」(또는 더블 클릭 후 모두 추출).
+#### Mac
 
-압축을 풀면 아래 파일들이 나옵니다:
+1. 다운로드한 `.dmg` 파일을 더블 클릭합니다
+2. 열린 창에서 **DRAMACODE** 앱을 **Applications** 폴더로 드래그합니다
+3. 완료되면 DMG 창을 닫습니다
 
-```
-dramacode          ← 실행 파일 (Windows는 dramacode.exe)
-web/               ← 웹 UI
-migration/         ← 데이터베이스
-vec0.dylib         ← 벡터 검색 (Mac은 .dylib, Windows는 .dll)
-```
+#### Windows
+
+1. 다운로드한 `.zip` 파일을 우클릭 →「압축 풀기」
+2. 원하는 위치에 압축을 풉니다 (예: 바탕화면)
 
 ### 3. 실행
 
 #### Mac
 
-터미널을 열고 압축 해제한 폴더로 이동한 후 실행합니다:
-
-```bash
-cd ~/Downloads      # 다운로드 폴더로 이동 (압축 푼 위치에 따라 다를 수 있음)
-./dramacode serve --open
-```
+**응용 프로그램** 폴더 (또는 Launchpad)에서 **DRAMACODE** 를 더블 클릭합니다.
 
 처음 실행 시 **"개발자를 확인할 수 없습니다"** 경고가 나올 수 있습니다:
+
 1. **시스템 설정** → **개인정보 보호 및 보안** 으로 이동
-2. 하단에 "dramacode" 관련 차단 메시지가 표시됨
+2. 하단에 "DRAMACODE" 관련 차단 메시지가 표시됨
 3. **「확인 없이 열기」** 클릭
-4. 터미널에서 다시 `./dramacode serve --open` 실행
+4. 다시 DRAMACODE를 더블 클릭
 
 #### Windows
 
-1. 압축 해제한 폴더를 엽니다
-2. 주소창에 `cmd` 를 입력하고 Enter (명령 프롬프트가 열림)
-3. 아래 명령어를 입력합니다:
-
-```cmd
-dramacode.exe serve --open
-```
+압축 해제한 폴더에서 **`Start DRAMACODE.bat`** 파일을 더블 클릭합니다.
 
 > Windows Defender SmartScreen 경고가 나오면「추가 정보」→「실행」을 클릭합니다.
 
 #### 실행 성공 시
 
-```
-Server listening on http://127.0.0.1:4097/
-Serving web UI from .../web
-```
-
-브라우저가 자동으로 열리며 DRAMACODE 화면이 표시됩니다. 자동으로 열리지 않으면 브라우저에서 직접 http://127.0.0.1:4097 에 접속합니다.
+브라우저가 자동으로 열리며 DRAMACODE 화면이 표시됩니다.
+자동으로 열리지 않으면 브라우저에서 직접 http://127.0.0.1:4097 에 접속합니다.
 
 ### 4. OpenAI 연결
 
@@ -102,13 +87,15 @@ DRAMACODE를 사용하려면 OpenAI 계정이 필요합니다.
 
 ## 종료
 
-터미널(또는 명령 프롬프트)에서 `Ctrl+C` 를 누르면 서버가 종료됩니다.
+- **Mac**: Dock에서 DRAMACODE 아이콘을 우클릭 →「종료」
+- **Windows**: 명령 프롬프트 창을 닫거나 `Ctrl+C`
 
 ## 문제 해결
 
 | 증상 | 해결 |
 |------|------|
-| Mac에서 "개발자를 확인할 수 없습니다" | 시스템 설정 → 개인정보 보호 및 보안 → 하단「확인 없이 열기」 |
+| Mac "개발자를 확인할 수 없습니다" | 시스템 설정 → 개인정보 보호 및 보안 → 하단「확인 없이 열기」 |
+| Mac "DRAMACODE.app이 손상되었습니다" | 터미널에서 `xattr -cr /Applications/DRAMACODE.app` 실행 후 다시 열기 |
 | Windows SmartScreen 경고 | 「추가 정보」→「실행」 |
 | "MFA required" 오류 | [chatgpt.com/settings](https://chatgpt.com/settings) → 보안에서 MFA 활성화 |
 | "Please contact your workspace admin" | 팀/워크스페이스 관리자에게 device code 인증 허용 요청 |

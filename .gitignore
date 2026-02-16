@@ -11,3 +11,6 @@ dist/
 mprocs.log
 tmp/
 *.zip
+*.dmg
+.tmp-app/
+.tmp-dmg/
