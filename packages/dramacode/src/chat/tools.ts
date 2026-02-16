@@ -140,6 +140,13 @@ const syncOperation = z.discriminatedUnion("type", [
     notes: z.string().optional(),
     characters_present: z.array(z.string()).optional(),
   }),
+  z.object({
+    type: z.literal("upsert_relationship"),
+    character1: z.string(),
+    character2: z.string(),
+    relation_type: z.string(),
+    description: z.string().optional(),
+  }),
 ])
 
 export function syncProjectTool(input: { drama_id: string }) {
@@ -161,6 +168,7 @@ export function syncProjectTool(input: { drama_id: string }) {
         world: [],
         plot_points: [],
         scenes: [],
+        relationships: [],
       }
 
       for (const op of params.operations) {
@@ -221,8 +229,25 @@ export function syncProjectTool(input: { drama_id: string }) {
         allow_scenes: params.operations.some((item) => item.type === "upsert_scene"),
       })
       stats = persistDraft(input.drama_id, sanitized)
-      log.info("tool.sync_project_data", { drama_id: input.drama_id, ...stats })
-      return `동기화 완료: drama=${stats.drama}, chars=${stats.characters}, episodes=${stats.episodes}, world=${stats.world}, plot=${stats.plot_points}, scenes=${stats.scenes}`
+
+      let rels = 0
+      for (const op of params.operations) {
+        if (op.type !== "upsert_relationship") continue
+        const c1 = Character.findByName(input.drama_id, op.character1)
+        const c2 = Character.findByName(input.drama_id, op.character2)
+        if (!c1 || !c2) continue
+        const r1 = (c1.relationships ?? []).filter((r) => r.character_id !== c2.id)
+        r1.push({ character_id: c2.id, type: op.relation_type, description: op.description ?? "" })
+        Character.update(c1.id, { relationships: r1 })
+        const r2 = (c2.relationships ?? []).filter((r) => r.character_id !== c1.id)
+        r2.push({ character_id: c1.id, type: op.relation_type, description: op.description ?? "" })
+        Character.update(c2.id, { relationships: r2 })
+        rels++
+      }
+      if (rels) EventBus.emit(input.drama_id, "character")
+
+      log.info("tool.sync_project_data", { drama_id: input.drama_id, ...stats, relationships: rels })
+      return `동기화 완료: drama=${stats.drama}, chars=${stats.characters}, episodes=${stats.episodes}, world=${stats.world}, plot=${stats.plot_points}, scenes=${stats.scenes}, rels=${rels}`
     },
   })
 
@@ -349,6 +374,40 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
         const message = warning.warning ? `\n${warning.warning}` : ""
         log.info("tool.create_character", { id: created.id, name: created.name })
         return `캐릭터 "${created.name}"이(가) 등록되었습니다.${message}`
+      },
+    }),
+
+    save_relationship: tool({
+      description:
+        "두 캐릭터 간의 관계를 설정합니다. 양방향으로 저장되며 인물 관계도에 반영됩니다. 두 캐릭터가 이미 등록된 상태에서만 사용하세요.",
+      inputSchema: z.object({
+        character1: z.string().describe("첫 번째 캐릭터 이름"),
+        character2: z.string().describe("두 번째 캐릭터 이름"),
+        type: z.string().describe("관계 유형 (예: 연인, 가족, 친구, 적대, 동료, 라이벌, 매니저, 팬)"),
+        description: z.string().optional().describe("관계에 대한 부연 설명"),
+      }),
+      execute: async (params) => {
+        const did = requireDrama()
+        const c1 = Character.findByName(did, params.character1)
+        const c2 = Character.findByName(did, params.character2)
+        if (!c1) return `캐릭터 "${params.character1}"을(를) 찾을 수 없습니다. 먼저 save_character로 등록해주세요.`
+        if (!c2) return `캐릭터 "${params.character2}"을(를) 찾을 수 없습니다. 먼저 save_character로 등록해주세요.`
+
+        const rels1 = (c1.relationships ?? []).filter((r) => r.character_id !== c2.id)
+        rels1.push({ character_id: c2.id, type: params.type, description: params.description ?? "" })
+        Character.update(c1.id, { relationships: rels1 })
+
+        const rels2 = (c2.relationships ?? []).filter((r) => r.character_id !== c1.id)
+        rels2.push({ character_id: c1.id, type: params.type, description: params.description ?? "" })
+        Character.update(c2.id, { relationships: rels2 })
+
+        EventBus.emit(did, "character")
+        log.info("tool.save_relationship", {
+          character1: params.character1,
+          character2: params.character2,
+          type: params.type,
+        })
+        return `"${params.character1}" ↔ "${params.character2}" 관계(${params.type})가 설정되었습니다.`
       },
     }),
 

@@ -75,6 +75,16 @@ export const StructuredSchema = z.object({
       }),
     )
     .default([]),
+  relationships: z
+    .array(
+      z.object({
+        character1: z.string().min(1),
+        character2: z.string().min(1),
+        type: z.string().min(1),
+        description: z.string().optional(),
+      }),
+    )
+    .default([]),
 })
 
 export type StructuredDraft = z.infer<typeof StructuredSchema>
@@ -162,6 +172,9 @@ export function sanitizeDraft(draft: StructuredDraft, snapshot: Snapshot, option
     world,
     plot_points,
     scenes,
+    relationships: (draft.relationships ?? []).filter(
+      (r) => !!text(r.character1) && !!text(r.character2) && !!text(r.type),
+    ),
   }
 }
 
@@ -240,6 +253,7 @@ export function heuristicDraft(input: string): StructuredDraft {
     world: world(input),
     plot_points: synopsis ? [{ type: "setup", description: synopsis }] : [],
     scenes: [],
+    relationships: [],
   }
 }
 
@@ -470,6 +484,19 @@ export function persistDraft(drama_id: string, draft: StructuredDraft) {
     }
   }
 
+  for (const rel of draft.relationships ?? []) {
+    const c1 = byName.get(key(rel.character1))
+    const c2 = byName.get(key(rel.character2))
+    if (!c1 || !c2) continue
+    const r1 = (c1.relationships ?? []).filter((r) => r.character_id !== c2.id)
+    r1.push({ character_id: c2.id, type: rel.type, description: rel.description ?? "" })
+    Character.update(c1.id, { relationships: r1 })
+    const r2 = (c2.relationships ?? []).filter((r) => r.character_id !== c1.id)
+    r2.push({ character_id: c1.id, type: rel.type, description: rel.description ?? "" })
+    Character.update(c2.id, { relationships: r2 })
+    changed.add("relationship")
+  }
+
   for (const type of changed) EventBus.emit(drama_id, type)
 
   const stats = {
@@ -479,6 +506,7 @@ export function persistDraft(drama_id: string, draft: StructuredDraft) {
     world: changed.has("world") ? draft.world.length : 0,
     plot_points: changed.has("plot") ? draft.plot_points.length : 0,
     scenes: changed.has("scene") ? draft.scenes.length : 0,
+    relationships: changed.has("relationship") ? draft.relationships.length : 0,
   }
   log.info("structured.persist", { drama_id, ...stats })
   return stats

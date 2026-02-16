@@ -145,7 +145,7 @@ export function RelationshipGraph(props: { characters: Character[] }) {
   onCleanup(() => cy?.destroy())
 
   return (
-    <div class="w-full h-full min-h-[200px] rounded-lg bg-bg border border-border/60 overflow-hidden">
+    <div class="w-full rounded-lg bg-bg border border-border/60 overflow-hidden" style={{ height: "260px" }}>
       <div ref={container} class="w-full h-full" />
     </div>
   )
