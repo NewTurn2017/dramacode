@@ -85,7 +85,7 @@ const zipPath = path.join(root, zipName)
 if (isWindows) {
   await $`powershell -Command "Compress-Archive -Path '${dist}\\*' -DestinationPath '${zipPath}' -Force"`.quiet()
 } else {
-  await $`zip -r -j ${zipPath} ${dist}`.quiet()
+  await $`zip -r ${zipPath} .`.cwd(dist).quiet()
 }
 if (existsSync(zipPath)) console.log(`  ${zipName}`)
 
