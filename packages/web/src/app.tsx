@@ -1,7 +1,7 @@
-import { type ParentProps, createSignal, createResource, Show } from "solid-js"
+import { type ParentProps, createSignal, createResource, Show, onMount } from "solid-js"
 import { A, useLocation } from "@solidjs/router"
 import { routes } from "./routes"
-import { api } from "./lib/api"
+import { api, type UpdateStatus } from "./lib/api"
 import { AuthGuideModal } from "./components/auth-guide-modal"
 
 function AuthSection() {
@@ -135,8 +135,46 @@ function AuthSection() {
           </button>
         </div>
       </Show>
-      <p class="text-[10px] text-text-dim text-center">v0.1.0</p>
+      <VersionBadge />
       <AuthGuideModal open={showGuide()} onClose={() => setShowGuide(false)} />
+    </div>
+  )
+}
+
+function VersionBadge() {
+  const [update, setUpdate] = createSignal<UpdateStatus | null>(null)
+  const [updating, setUpdating] = createSignal(false)
+
+  onMount(async () => {
+    try {
+      const status = await api.update.check()
+      setUpdate(status)
+    } catch {}
+  })
+
+  async function handleUpdate() {
+    setUpdating(true)
+    try {
+      await api.update.apply()
+    } catch {
+      setUpdating(false)
+    }
+  }
+
+  return (
+    <div class="text-center space-y-1">
+      <Show
+        when={update()?.hasUpdate}
+        fallback={<p class="text-[10px] text-text-dim">v{update()?.version ?? "0.1.0"}</p>}
+      >
+        <button
+          onClick={handleUpdate}
+          disabled={updating()}
+          class="w-full px-2 py-1 text-[10px] font-medium rounded-md bg-success/15 text-success hover:bg-success/25 transition-colors disabled:opacity-50"
+        >
+          {updating() ? "업데이트 중..." : `v${update()!.latest} 업데이트 가능`}
+        </button>
+      </Show>
     </div>
   )
 }

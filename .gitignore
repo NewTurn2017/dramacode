@@ -10,3 +10,4 @@ dist/
 .firecrawl/
 mprocs.log
 tmp/
+*.zip

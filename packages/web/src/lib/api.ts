@@ -186,6 +186,14 @@ export type AutosaveResyncResult = {
   metrics: AutosaveStatus
 }
 
+export type UpdateStatus = {
+  version: string
+  hasUpdate: boolean
+  latest: string
+  releaseUrl: string | null
+  size: number
+}
+
 export const api = {
   auth: {
     status: () => get<{ providers: string[] }>("/auth"),
@@ -193,6 +201,10 @@ export const api = {
     setKey: (key: string) =>
       request<boolean>("/auth/openai", { method: "PUT", body: JSON.stringify({ type: "api", key }) }),
     logout: () => del("/auth/openai"),
+  },
+  update: {
+    check: () => get<UpdateStatus>("/update/check"),
+    apply: () => post<{ ok: boolean; message: string }>("/update/apply", {}),
   },
   drama: {
     list: () => get<Drama[]>("/drama"),

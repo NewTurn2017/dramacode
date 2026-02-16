@@ -4,6 +4,7 @@ import path from "path"
 import { Log } from "../util/log"
 import { Auth } from "../auth"
 import { OpenAIAuth } from "../plugin/openai"
+import { Updater } from "../update"
 import { lazy } from "../util/lazy"
 import { SessionRoutes } from "./routes/session"
 import { ChatRoutes } from "./routes/chat"
@@ -16,10 +17,16 @@ import { cleanupDuplicates } from "../chat/structured"
 const log = Log.create({ service: "server" })
 
 let _url: URL | undefined
+let _version = "0.1.0"
+let _cachedUpdate: Awaited<ReturnType<typeof Updater.check>> = null
 
 export namespace Server {
   export function url(): URL {
     return _url ?? new URL("http://localhost:4097")
+  }
+
+  export function setVersion(v: string) {
+    _version = v
   }
 
   const app = new Hono()
@@ -90,6 +97,31 @@ export namespace Server {
           } catch (err) {
             log.error("openai device login failed", { error: String(err) })
             return c.json({ error: "Failed to start device login" }, 500)
+          }
+        })
+        .get("/update/check", async (c) => {
+          const info = _cachedUpdate ?? (await Updater.check(_version))
+          if (info?.hasUpdate) _cachedUpdate = info
+          return c.json({
+            version: _version,
+            hasUpdate: info?.hasUpdate ?? false,
+            latest: info?.latest ?? _version,
+            releaseUrl: info?.releaseUrl ?? null,
+            size: info?.size ?? 0,
+          })
+        })
+        .post("/update/apply", async (c) => {
+          if (!_cachedUpdate?.hasUpdate) {
+            return c.json({ error: "No update available" }, 400)
+          }
+          try {
+            const zipPath = await Updater.download(_cachedUpdate)
+            await Updater.apply(zipPath)
+            setTimeout(() => Updater.restart(), 500)
+            return c.json({ ok: true, message: "Update applied, restarting..." })
+          } catch (err) {
+            log.error("update apply failed", { error: String(err) })
+            return c.json({ error: String(err) }, 500)
           }
         }) as unknown as Hono,
   )

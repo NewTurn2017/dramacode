@@ -5,8 +5,10 @@ import { AuthCommand } from "./cli/cmd/auth"
 import { ServeCommand } from "./cli/cmd/serve"
 import { ChatCommand } from "./cli/cmd/chat"
 import { DramaCommand } from "./cli/cmd/drama"
+import { Server } from "./server/server"
 
-const VERSION = "0.1.0"
+export const VERSION = "0.1.0"
+Server.setVersion(VERSION)
 
 process.on("unhandledRejection", (e) => {
   Log.Default.error("rejection", { e: e instanceof Error ? e.message : String(e) })

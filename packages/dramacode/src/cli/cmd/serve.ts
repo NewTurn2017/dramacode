@@ -3,6 +3,7 @@ import path from "path"
 import { existsSync } from "fs"
 import open from "open"
 import { Server } from "../../server/server"
+import { Updater } from "../../update"
 
 function resolveStaticDir(explicit?: string): string | undefined {
   if (explicit) return explicit
@@ -55,6 +56,9 @@ export const ServeCommand: CommandModule = {
     if (argv.open) {
       await open(server.url.href).catch(() => {})
     }
+
+    Updater.cleanupOldBinary()
+
     await new Promise(() => {})
   },
 }
