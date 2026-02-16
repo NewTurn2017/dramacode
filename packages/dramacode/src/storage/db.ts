@@ -137,6 +137,7 @@ export namespace Database {
     const migrationDir = [
       path.join(import.meta.dirname, "../../migration"),
       path.join(execDir, "migration"),
+      path.join(execDir, "../Resources/migration"),
       path.join(execDir, "../migration"),
     ].find((dir) => {
       try {

@@ -109,7 +109,17 @@ if (isDarwin) {
   mkdirSync(macosDir, { recursive: true })
   mkdirSync(resourcesDir, { recursive: true })
 
-  cpSync(dist, macosDir, { recursive: true })
+  // MacOS/ — only binaries (dramacode, vec0.dylib, launcher)
+  const binarySrc = path.join(dist, binaryName)
+  if (existsSync(binarySrc)) cpSync(binarySrc, path.join(macosDir, binaryName))
+  const vecSrcApp = path.join(dist, `vec0.${vecSuffix}`)
+  if (existsSync(vecSrcApp)) cpSync(vecSrcApp, path.join(macosDir, `vec0.${vecSuffix}`))
+
+  // Resources/ — web, migration, icon (non-code assets)
+  const webSrc = path.join(dist, "web")
+  if (existsSync(webSrc)) cpSync(webSrc, path.join(resourcesDir, "web"), { recursive: true })
+  const migSrc = path.join(dist, "migration")
+  if (existsSync(migSrc)) cpSync(migSrc, path.join(resourcesDir, "migration"), { recursive: true })
 
   const icnsSrc = path.join(iconDir, "AppIcon.icns")
   if (existsSync(icnsSrc)) {

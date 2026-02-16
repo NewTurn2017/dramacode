@@ -10,6 +10,7 @@ function resolveStaticDir(explicit?: string): string | undefined {
   const execDir = path.dirname(process.execPath)
   const candidates = [
     path.join(execDir, "web"),
+    path.join(execDir, "../Resources/web"),
     path.join(import.meta.dirname, "../../web"),
     path.join(import.meta.dirname, "../web"),
   ]

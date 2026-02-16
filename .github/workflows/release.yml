@@ -84,19 +84,25 @@ jobs:
 
           APP=".tmp-sign/app/DRAMACODE.app"
 
-          find "$APP/Contents/MacOS" -type f -perm +111 | while read bin; do
-            codesign --force --options runtime \
-              --entitlements assets/entitlements.plist \
-              --sign "Developer ID Application" \
-              --timestamp "$bin"
-          done
-
-          find "$APP/Contents/MacOS" -name "*.dylib" | while read lib; do
+          # Sign dylibs first (innermost)
+          find "$APP" -name "*.dylib" | while read lib; do
             codesign --force --options runtime \
               --sign "Developer ID Application" \
               --timestamp "$lib"
           done
 
+          # Sign the main binary with entitlements
+          codesign --force --options runtime \
+            --entitlements assets/entitlements.plist \
+            --sign "Developer ID Application" \
+            --timestamp "$APP/Contents/MacOS/dramacode"
+
+          # Sign the launcher script
+          codesign --force --options runtime \
+            --sign "Developer ID Application" \
+            --timestamp "$APP/Contents/MacOS/launcher"
+
+          # Sign the whole .app bundle
           codesign --force --options runtime \
             --entitlements assets/entitlements.plist \
             --sign "Developer ID Application" \
