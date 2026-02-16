@@ -51,7 +51,14 @@ if (existsSync(vecSrc)) {
   console.warn(`  Warning: ${vecSrc} not found, vector search will be unavailable`)
 }
 
+const iconDir = path.join(root, "assets")
 if (isWindows) {
+  const icoSrc = path.join(iconDir, "AppIcon.ico")
+  if (existsSync(icoSrc)) {
+    cpSync(icoSrc, path.join(dist, "AppIcon.ico"))
+    console.log("  Copied AppIcon.ico")
+  }
+
   const bat = [
     "@echo off",
     "chcp 65001 >nul 2>&1",
@@ -98,9 +105,16 @@ if (isDarwin) {
 
   const appDir = path.join(tmpApp, "DRAMACODE.app", "Contents")
   const macosDir = path.join(appDir, "MacOS")
+  const resourcesDir = path.join(appDir, "Resources")
   mkdirSync(macosDir, { recursive: true })
+  mkdirSync(resourcesDir, { recursive: true })
 
   cpSync(dist, macosDir, { recursive: true })
+
+  const icnsSrc = path.join(iconDir, "AppIcon.icns")
+  if (existsSync(icnsSrc)) {
+    cpSync(icnsSrc, path.join(resourcesDir, "AppIcon.icns"))
+  }
 
   const launcher = ["#!/bin/bash", 'DIR="$(cd "$(dirname "$0")" && pwd)"', 'exec "$DIR/dramacode" serve --open', ""].join(
     "\n",
@@ -118,6 +132,7 @@ if (isDarwin) {
   <key>CFBundleVersion</key><string>${version}</string>
   <key>CFBundleShortVersionString</key><string>${version}</string>
   <key>CFBundleExecutable</key><string>launcher</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>NSHighResolutionCapable</key><true/>
