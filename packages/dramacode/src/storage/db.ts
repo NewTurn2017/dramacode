@@ -1,5 +1,4 @@
 import { Database as BunDatabase } from "bun:sqlite"
-import * as sqliteVec from "sqlite-vec"
 import { drizzle, type SQLiteBunDatabase } from "drizzle-orm/bun-sqlite"
 import { migrate } from "drizzle-orm/bun-sqlite/migrator"
 import { type SQLiteTransaction } from "drizzle-orm/sqlite-core"
@@ -34,9 +33,47 @@ export namespace Database {
   type Journal = { sql: string; timestamp: number }[]
   let raw: BunDatabase | undefined
 
+  function vecExtName() {
+    if (process.platform === "win32") return "vec0.dll"
+    if (process.platform === "darwin") return "vec0.dylib"
+    return "vec0.so"
+  }
+
+  function loadSqliteVec(db: BunDatabase) {
+    try {
+      const mod = require("sqlite-vec")
+      mod.load(db)
+      log.info("sqlite-vec loaded via npm")
+      return
+    } catch {}
+
+    const name = vecExtName()
+    const execDir = path.dirname(process.execPath)
+    const candidates = [
+      path.join(execDir, name),
+      path.join(execDir, "lib", name),
+      path.join(import.meta.dirname, name),
+    ]
+    for (const file of candidates) {
+      try {
+        db.loadExtension(file.replace(/\.[^.]+$/, ""))
+        log.info("sqlite-vec loaded", { file })
+        return
+      } catch {
+        continue
+      }
+    }
+    log.warn("sqlite-vec not found, vector search disabled")
+  }
+
   function customSQLite() {
-    const paths = ["/opt/homebrew/opt/sqlite/lib/libsqlite3.dylib", "/usr/local/opt/sqlite/lib/libsqlite3.dylib"]
-    for (const file of paths) {
+    const candidates =
+      process.platform === "darwin"
+        ? ["/opt/homebrew/opt/sqlite/lib/libsqlite3.dylib", "/usr/local/opt/sqlite/lib/libsqlite3.dylib"]
+        : process.platform === "linux"
+          ? ["/usr/lib/x86_64-linux-gnu/libsqlite3.so.0", "/usr/lib/libsqlite3.so"]
+          : []
+    for (const file of candidates) {
       try {
         BunDatabase.setCustomSQLite(file)
         log.info("custom sqlite loaded", { file })
@@ -45,7 +82,6 @@ export namespace Database {
         continue
       }
     }
-    log.warn("custom sqlite not configured")
   }
 
   function time(tag: string) {
@@ -85,7 +121,7 @@ export namespace Database {
 
     customSQLite()
     const sqlite = new BunDatabase(Database.Path, { create: true })
-    sqliteVec.load(sqlite)
+    loadSqliteVec(sqlite)
     raw = sqlite
 
     sqlite.run("PRAGMA journal_mode = WAL")
@@ -97,7 +133,19 @@ export namespace Database {
 
     const db = drizzle({ client: sqlite, schema })
 
-    const entries = migrations(path.join(import.meta.dirname, "../../migration"))
+    const execDir = path.dirname(process.execPath)
+    const migrationDir = [
+      path.join(import.meta.dirname, "../../migration"),
+      path.join(execDir, "migration"),
+      path.join(execDir, "../migration"),
+    ].find((dir) => {
+      try {
+        return readdirSync(dir).length > 0
+      } catch {
+        return false
+      }
+    })
+    const entries = migrationDir ? migrations(migrationDir) : []
     if (entries.length > 0) {
       log.info("applying migrations", { count: entries.length })
       migrate(db, entries)

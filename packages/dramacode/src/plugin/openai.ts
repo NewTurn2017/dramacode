@@ -378,6 +378,56 @@ export namespace OpenAIAuth {
     }
   }
 
+  export async function webLogin(): Promise<{ url: string; userCode: string; done: Promise<Login> }> {
+    const ua = "dramacode/0.1.0"
+    const start = await fetch(`${ISSUER}/api/accounts/deviceauth/usercode`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": ua },
+      body: JSON.stringify({ client_id: CLIENT_ID }),
+    })
+    if (!start.ok) throw new Error("Failed to initiate device authorization")
+
+    const info = (await start.json()) as {
+      device_auth_id: string
+      user_code: string
+      interval: string
+    }
+    const wait = Math.max(parseInt(info.interval) || 5, 1) * 1000
+
+    const done = (async () => {
+      while (true) {
+        const poll = await fetch(`${ISSUER}/api/accounts/deviceauth/token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "User-Agent": ua },
+          body: JSON.stringify({
+            device_auth_id: info.device_auth_id,
+            user_code: info.user_code,
+          }),
+        })
+
+        if (poll.ok) {
+          const code = (await poll.json()) as {
+            authorization_code: string
+            code_verifier: string
+          }
+          const token = await exchangeCode(code.authorization_code, `${ISSUER}/deviceauth/callback`, {
+            verifier: code.code_verifier,
+            challenge: "",
+          })
+          return authResult(token)
+        }
+
+        if (poll.status !== 403 && poll.status !== 404) {
+          throw new Error(`Device authorization failed: ${poll.status}`)
+        }
+
+        await Bun.sleep(wait + OAUTH_POLLING_SAFETY_MARGIN_MS)
+      }
+    })()
+
+    return { url: `${ISSUER}/codex/device`, userCode: info.user_code, done }
+  }
+
   export async function deviceLogin() {
     const ua = "dramacode/0.1.0"
     const start = await fetch(`${ISSUER}/api/accounts/deviceauth/usercode`, {

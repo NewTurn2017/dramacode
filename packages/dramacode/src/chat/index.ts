@@ -5,6 +5,7 @@ import { OpenAIAuth } from "../plugin/openai"
 import { DramaPrompt } from "./prompt"
 import { dramaTools, syncProjectTool } from "./tools"
 import { Session } from "../session"
+import { Drama } from "../drama"
 import { Log } from "../util/log"
 import { compactIfNeeded } from "./compaction"
 import { Rag } from "../rag"
@@ -313,6 +314,68 @@ export namespace Chat {
     })
   }
 
+  export async function organize(input: { session_id: string; model?: string }) {
+    const openai = await provider()
+    const model = input.model ?? "gpt-5.2"
+    const session = Session.get(input.session_id)
+    if (!session.drama_id) throw new Error("session has no drama_id")
+
+    const messages = Session.messages(input.session_id, 10_000)
+    if (messages.length === 0) return { status: "empty" as const }
+
+    const conversation = messages
+      .map((m) => `[${m.role.toUpperCase()}]\n${m.content}`)
+      .join("\n\n---\n\n")
+
+    const snap = snapshot(session.drama_id)
+    const prompt = [
+      "You are the project-sync agent.",
+      "Below is the FULL conversation between a writer and AI assistant about a drama project.",
+      "Extract ALL confirmed structured data and call sync_project_data ONCE with every entity.",
+      "Include everything: drama meta, characters, episodes, world-building, plot points, scenes.",
+      "Rules:",
+      "- Include only confirmed facts (explicitly stated or mutually agreed upon).",
+      "- Do not invent or guess data that is not in the conversation.",
+      "- This is a FULL OVERWRITE sync — include ALL entities, not just changes.",
+      "- Prefer the most recent version if something was revised during the conversation.",
+      `Current foundation: characters=${snap.characters}, episodes=${snap.episodes}, world=${snap.world}`,
+      "",
+      "[FULL CONVERSATION]",
+      conversation,
+    ].join("\n")
+
+    const sync = syncProjectTool({ drama_id: session.drama_id })
+    try {
+      const out = streamText({
+        model: openai(model),
+        messages: [{ role: "user", content: prompt }],
+        tools: { sync_project_data: sync.sync_project_data },
+        stopWhen: stepCountIs(3),
+        providerOptions: {
+          openai: {
+            instructions: "Tool-calling sync agent. Always call sync_project_data exactly once with all entities.",
+            store: false,
+          },
+        },
+      })
+      await out.text
+    } catch (error) {
+      log.error("chat.organize.failed", {
+        session_id: input.session_id,
+        drama_id: session.drama_id,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      throw error
+    }
+
+    const stats = sync.stats()
+    log.info("chat.organize.done", { session_id: input.session_id, drama_id: session.drama_id, calls: sync.calls(), ...stats })
+
+    EventBus.emit(session.drama_id, "structured")
+
+    return { status: "ok" as const, stats }
+  }
+
   export async function resync(input: {
     drama_id: string
     model?: string
@@ -417,14 +480,6 @@ export namespace Chat {
     })
 
     const text = await result.text
-    await autosave({
-      openai,
-      model,
-      drama_id: session.drama_id,
-      user: input.content,
-      assistant: text,
-      source: "send",
-    })
     const msg = Session.addMessage({
       session_id: input.session_id,
       role: "assistant",
@@ -444,10 +499,11 @@ export namespace Chat {
     const model = input.model ?? "gpt-5.2"
     const session = Session.get(input.session_id)
     const system = DramaPrompt.buildContext(session.drama_id)
+    const dramaTitle = session.drama_id ? Drama.get(session.drama_id).title : undefined
 
     return streamText({
       model: openai(model),
-      messages: [{ role: "user", content: DramaPrompt.greetingPrompt }],
+      messages: [{ role: "user", content: DramaPrompt.greetingPrompt(dramaTitle) }],
       tools: dramaTools({ session_id: input.session_id, drama_id: session.drama_id }),
       stopWhen: stepCountIs(3),
       providerOptions: { openai: { instructions: system, store: false } },
@@ -503,14 +559,6 @@ export namespace Chat {
       stopWhen: stepCountIs(5),
       providerOptions: { openai: { instructions: system, store: false } },
       async onFinish({ text }) {
-        await autosave({
-          openai,
-          model,
-          drama_id: session.drama_id,
-          user: input.content,
-          assistant: text,
-          source: "stream",
-        })
         if (text.trim()) {
           Session.addMessage({
             session_id: input.session_id,

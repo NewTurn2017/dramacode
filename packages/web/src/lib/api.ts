@@ -187,6 +187,13 @@ export type AutosaveResyncResult = {
 }
 
 export const api = {
+  auth: {
+    status: () => get<{ providers: string[] }>("/auth"),
+    login: () => post<{ url: string; userCode: string }>("/auth/openai/login", {}),
+    setKey: (key: string) =>
+      request<boolean>("/auth/openai", { method: "PUT", body: JSON.stringify({ type: "api", key }) }),
+    logout: () => del("/auth/openai"),
+  },
   drama: {
     list: () => get<Drama[]>("/drama"),
     get: (id: string) => get<Drama>(`/drama/${id}`),
@@ -226,6 +233,8 @@ export const api = {
         body: "{}",
         signal,
       }),
+    organize: (sessionId: string) =>
+      post<{ status: string; stats?: Record<string, number> }>(`/chat/${sessionId}/organize`, {}),
   },
   writer: {
     list: () => get<WriterStyle[]>("/writer"),

@@ -44,6 +44,11 @@ export function ChatRoutes() {
         }
       })
     })
+    .post("/:sessionID/organize", async (c) => {
+      const sessionID = c.req.param("sessionID")
+      const result = await Chat.organize({ session_id: sessionID })
+      return c.json(result)
+    })
     .post("/:sessionID/sync", async (c) => {
       const sessionID = c.req.param("sessionID")
       const body = await c.req.json<{

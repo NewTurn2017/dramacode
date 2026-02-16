@@ -6,6 +6,38 @@ import { Log } from "../util/log"
 
 const log = Log.create({ service: "chat.structured" })
 
+/** Dedup DB rows: group by key, keep most recently updated, remove the rest. Returns a clean Map. */
+function dedupEntities<T extends { id: string; time_updated: number }>(
+  items: T[],
+  keyFn: (item: T) => string | number,
+  removeFn: (id: string) => void,
+): Map<string | number, T> {
+  const groups = new Map<string | number, T[]>()
+  for (const item of items) {
+    const k = keyFn(item)
+    const arr = groups.get(k)
+    if (arr) arr.push(item)
+    else groups.set(k, [item])
+  }
+  const result = new Map<string | number, T>()
+  for (const [k, group] of groups) {
+    group.sort((a, b) => b.time_updated - a.time_updated)
+    result.set(k, group[0]!)
+    for (let i = 1; i < group.length; i++) {
+      try {
+        removeFn(group[i]!.id)
+        log.info("structured.dedup.removed", { entity_id: group[i]!.id, key: String(k) })
+      } catch (e) {
+        log.error("structured.dedup.removeFailed", {
+          entity_id: group[i]!.id,
+          error: e instanceof Error ? e.message : String(e),
+        })
+      }
+    }
+  }
+  return result
+}
+
 const worldCategory = z.enum(["location", "culture", "rule", "history", "technology"])
 const plotType = z.enum(["setup", "conflict", "twist", "climax", "resolution", "foreshadowing"])
 const role = z.enum(["protagonist", "antagonist", "supporting", "extra"])
@@ -340,6 +372,40 @@ function indexScene(drama_id: string, input: Scene.Info) {
   )
 }
 
+export function cleanupDuplicates() {
+  const dramas = Drama.list()
+  let total = 0
+  for (const drama of dramas) {
+    const before = {
+      chars: Character.listByDrama(drama.id).length,
+      eps: Episode.listByDrama(drama.id).length,
+      worlds: World.listByDrama(drama.id).length,
+      scenes: Scene.listByDrama(drama.id).length,
+    }
+    dedupEntities(Character.listByDrama(drama.id), (i) => key(i.name), Character.remove)
+    dedupEntities(Episode.listByDrama(drama.id), (i) => i.number, Episode.remove)
+    dedupEntities(World.listByDrama(drama.id), (i) => key(`${i.category}:${i.name}`), World.remove)
+    dedupEntities(Scene.listByDrama(drama.id), (i) => key(`${i.episode_id}:${i.number}`), Scene.remove)
+    const after = {
+      chars: Character.listByDrama(drama.id).length,
+      eps: Episode.listByDrama(drama.id).length,
+      worlds: World.listByDrama(drama.id).length,
+      scenes: Scene.listByDrama(drama.id).length,
+    }
+    const removed =
+      (before.chars - after.chars) +
+      (before.eps - after.eps) +
+      (before.worlds - after.worlds) +
+      (before.scenes - after.scenes)
+    total += removed
+    if (removed > 0) {
+      log.info("structured.cleanup", { drama_id: drama.id, title: drama.title, removed })
+    }
+  }
+  if (total > 0) log.info("structured.cleanup.total", { dramas: dramas.length, removed: total })
+  return total
+}
+
 export function persistDraft(drama_id: string, draft: StructuredDraft) {
   const changed = new Set<string>()
   const base = Drama.get(drama_id)
@@ -372,7 +438,7 @@ export function persistDraft(drama_id: string, draft: StructuredDraft) {
   }
 
   const chars = Character.listByDrama(drama_id)
-  const byName = new Map(chars.map((item) => [key(item.name), item]))
+  const byName = dedupEntities(chars, (item) => key(item.name), Character.remove)
   for (const item of draft.characters) {
     const found = byName.get(key(item.name))
     if (!found) {
@@ -396,7 +462,7 @@ export function persistDraft(drama_id: string, draft: StructuredDraft) {
   }
 
   const eps = Episode.listByDrama(drama_id)
-  const byNumber = new Map(eps.map((item) => [item.number, item]))
+  const byNumber = dedupEntities(eps, (item) => item.number, Episode.remove)
   for (const item of draft.episodes) {
     const found = byNumber.get(item.number)
     if (!found) {
@@ -416,7 +482,7 @@ export function persistDraft(drama_id: string, draft: StructuredDraft) {
   }
 
   const worlds = World.listByDrama(drama_id)
-  const byWorld = new Map(worlds.map((item) => [key(`${item.category}:${item.name}`), item]))
+  const byWorld = dedupEntities(worlds, (item) => key(`${item.category}:${item.name}`), World.remove)
   for (const item of draft.world) {
     const k = key(`${item.category}:${item.name}`)
     const found = byWorld.get(k)
@@ -448,7 +514,7 @@ export function persistDraft(drama_id: string, draft: StructuredDraft) {
 
   if (draft.scenes.length) {
     const scenes = Scene.listByDrama(drama_id)
-    const byScene = new Map(scenes.map((item) => [key(`${item.episode_id}:${item.number}`), item]))
+    const byScene = dedupEntities(scenes, (item) => key(`${item.episode_id}:${item.number}`), Scene.remove)
     for (const item of draft.scenes) {
       const episode = byNumber.get(item.episode_number)
       if (!episode) continue

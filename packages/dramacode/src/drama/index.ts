@@ -108,6 +108,16 @@ export namespace Episode {
     )
   }
 
+  export function findByNumber(dramaID: string, number: number): Info | undefined {
+    return Database.use((db) =>
+      db
+        .select()
+        .from(EpisodeTable)
+        .where(and(eq(EpisodeTable.drama_id, dramaID), eq(EpisodeTable.number, number)))
+        .get(),
+    )
+  }
+
   export function remove(id: string) {
     Database.use((db) => db.delete(EpisodeTable).where(eq(EpisodeTable.id, id)).run())
     log.info("episode.removed", { id })
@@ -186,6 +196,16 @@ export namespace Scene {
         .limit(limit)
         .all(),
     ).map((row) => row.scene)
+  }
+
+  export function findByNumber(episodeID: string, number: number): Info | undefined {
+    return Database.use((db) =>
+      db
+        .select()
+        .from(SceneTable)
+        .where(and(eq(SceneTable.episode_id, episodeID), eq(SceneTable.number, number)))
+        .get(),
+    )
   }
 
   export function remove(id: string) {
@@ -351,6 +371,16 @@ export namespace World {
       : eq(WorldTable.drama_id, dramaID)
     return Database.use((db) =>
       db.select().from(WorldTable).where(condition).orderBy(WorldTable.category, WorldTable.name).limit(limit).all(),
+    )
+  }
+
+  export function findByKey(dramaID: string, category: string, name: string): Info | undefined {
+    return Database.use((db) =>
+      db
+        .select()
+        .from(WorldTable)
+        .where(and(eq(WorldTable.drama_id, dramaID), eq(WorldTable.category, category), eq(WorldTable.name, name)))
+        .get(),
     )
   }
 

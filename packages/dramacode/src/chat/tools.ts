@@ -13,51 +13,37 @@ const VALIDATION_ERROR = "입력값이 올바르지 않습니다. 필드를 확�
 
 z.setErrorMap(() => ({ message: VALIDATION_ERROR }))
 
+const moodKeywords: [string[], string][] = [
+  [["romance", "romantic", "사랑", "로맨", "설렘"], "romantic"],
+  [["tension", "tense", "위기", "긴장", "추격", "갈등"], "tense"],
+  [["mystery", "mysterious", "비밀", "의문", "수상"], "mysterious"],
+  [["sad", "melanch", "슬픔", "쓸쓸", "외로"], "melancholic"],
+  [["bright", "warm", "행복", "기쁨", "코믹"], "cheerful"],
+]
+
 function inferMood(input: { description?: string | null; notes?: string | null; tone?: string | null }) {
   const text = [input.description, input.notes, input.tone].filter(Boolean).join(" ").toLowerCase()
   if (!text) return "dramatic"
-  if (
-    text.includes("romance") ||
-    text.includes("romantic") ||
-    text.includes("사랑") ||
-    text.includes("로맨") ||
-    text.includes("설렘")
-  )
-    return "romantic"
-  if (
-    text.includes("tension") ||
-    text.includes("tense") ||
-    text.includes("위기") ||
-    text.includes("긴장") ||
-    text.includes("추격") ||
-    text.includes("갈등")
-  )
-    return "tense"
-  if (
-    text.includes("mystery") ||
-    text.includes("mysterious") ||
-    text.includes("비밀") ||
-    text.includes("의문") ||
-    text.includes("수상")
-  )
-    return "mysterious"
-  if (
-    text.includes("sad") ||
-    text.includes("melanch") ||
-    text.includes("슬픔") ||
-    text.includes("쓸쓸") ||
-    text.includes("외로")
-  )
-    return "melancholic"
-  if (
-    text.includes("bright") ||
-    text.includes("warm") ||
-    text.includes("행복") ||
-    text.includes("기쁨") ||
-    text.includes("코믹")
-  )
-    return "cheerful"
+  for (const [keywords, mood] of moodKeywords) {
+    if (keywords.some((k) => text.includes(k))) return mood
+  }
   return "dramatic"
+}
+
+const moodToLighting: Record<string, string> = {
+  romantic: "warm golden hour light with soft bokeh, gentle lens flare",
+  tense: "harsh chiaroscuro lighting with deep shadows, cold blue rim light",
+  mysterious: "low-key lighting with fog, single shaft of light cutting through darkness",
+  melancholic: "overcast diffused light, muted desaturated tones, rain-streaked window reflections",
+  cheerful: "bright natural daylight, vibrant warm tones, soft fill light",
+  dramatic: "cinematic three-point lighting, strong key light with dramatic falloff",
+}
+
+const todToAtmosphere: Record<string, string> = {
+  DAY: "midday natural sunlight, clear atmospheric perspective",
+  NIGHT: "moonlit atmosphere with practical light sources, neon reflections on wet surfaces",
+  DAWN: "pre-dawn blue hour transitioning to golden, misty atmospheric haze",
+  DUSK: "magic hour warm amber light, long dramatic shadows, gradient sky from orange to deep blue",
 }
 
 function buildScenePrompt(input: { scene: Scene.Info; drama: Drama.Info }): {
@@ -71,15 +57,37 @@ function buildScenePrompt(input: { scene: Scene.Info; drama: Drama.Info }): {
     notes: input.scene.notes,
     tone: input.drama.tone,
   })
-  const place = input.scene.location ?? "an unspecified location"
-  const time = input.scene.time_of_day ? input.scene.time_of_day.toLowerCase() : "an unspecified time"
-  const cast = input.scene.characters_present?.length ? input.scene.characters_present.join(", ") : "the key characters"
-  const action = input.scene.description ?? "the central dramatic action unfolds"
-  const tone = input.drama.tone ?? mood
+  const lighting = moodToLighting[mood] ?? moodToLighting.dramatic
+  const atmosphere = input.scene.time_of_day ? todToAtmosphere[input.scene.time_of_day] ?? "" : ""
+
+  const parts: string[] = []
+
+  parts.push("Photorealistic cinematic still from a Korean drama series")
+
+  if (input.scene.location) {
+    parts.push(`set in ${input.scene.location}`)
+  }
+
+  if (input.scene.characters_present?.length) {
+    const count = input.scene.characters_present.length
+    parts.push(count === 1 ? "featuring one character" : `featuring ${count} characters in the frame`)
+  }
+
+  if (input.scene.description) {
+    parts.push(input.scene.description)
+  }
+
+  parts.push(lighting)
+  if (atmosphere) parts.push(atmosphere)
+  parts.push("anamorphic lens, shallow depth of field, 2.39:1 aspect ratio, film grain texture")
+
+  if (input.drama.tone) {
+    parts.push(`${input.drama.tone} emotional atmosphere`)
+  }
 
   return {
-    prompt: `Cinematic Korean drama scene set at ${place} during ${time}, featuring ${cast}. ${action}. Emotional tone: ${tone}.`,
-    style: "cinematic",
+    prompt: parts.join(". ") + ".",
+    style: "cinematic photorealistic",
     mood,
     resolution: "1K",
   }
@@ -412,7 +420,8 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
     }),
 
     save_episode: tool({
-      description: "에피소드(회차)를 생성합니다. 에피소드 구성을 논의할 때 사용하세요.",
+      description:
+        "에피소드(회차)를 생성하거나 업데이트합니다. 같은 회차 번호가 이미 있으면 업데이트됩니다. 에피소드 구성을 논의할 때 사용하세요.",
       inputSchema: z.object({
         number: z.number().describe("회차 번호"),
         title: z.string().describe("에피소드 제목"),
@@ -420,6 +429,22 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
       }),
       execute: async (params) => {
         const did = requireDrama()
+        const existing = Episode.findByNumber(did, params.number)
+        if (existing) {
+          const updated = Episode.update(existing.id, {
+            title: params.title,
+            synopsis: params.synopsis ?? existing.synopsis,
+          })
+          Rag.index({
+            entity_id: updated.id,
+            entity_type: "episode",
+            drama_id: did,
+            content: Rag.serialize.episode(updated),
+          }).catch((err) => ragError("tool.rag.index.update_episode", err, { entity_id: updated.id, drama_id: did }))
+          EventBus.emit(did, "episode")
+          log.info("tool.update_episode", { id: updated.id, number: updated.number })
+          return `${updated.number}화 "${updated.title}" 에피소드가 업데이트되었습니다. (ID: ${updated.id})`
+        }
         const ep = Episode.create({ drama_id: did, ...params })
         Rag.index({
           entity_id: ep.id,
@@ -478,7 +503,8 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
     }),
 
     save_scene: tool({
-      description: "장면(씬)을 생성합니다. 구체적인 장면이 논의될 때 사용하세요. 반드시 episode_id가 필요합니다.",
+      description:
+        "장면(씬)을 생성하거나 업데이트합니다. 같은 에피소드 내 같은 장면 번호가 이미 있으면 업데이트됩니다. 반드시 episode_id가 필요합니다.",
       inputSchema: z.object({
         episode_id: z.string().describe("에피소드 ID"),
         number: z.number().describe("장면 번호"),
@@ -493,18 +519,40 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
         const did = requireDrama()
         const episode = Episode.get(params.episode_id)
         if (episode.drama_id !== did) throw new Error("현재 드라마에 속한 에피소드만 저장할 수 있습니다.")
+        const existing = Scene.findByNumber(params.episode_id, params.number)
+        if (existing) {
+          const updated = Scene.update(existing.id, {
+            location: params.location ?? existing.location,
+            time_of_day: params.time_of_day ?? existing.time_of_day,
+            description: params.description ?? existing.description,
+            dialogue: params.dialogue ?? existing.dialogue,
+            notes: params.notes ?? existing.notes,
+            characters_present: params.characters_present ?? existing.characters_present ?? undefined,
+          })
+          const prompt = buildScenePrompt({ scene: updated, drama: Drama.get(did) })
+          const final = Scene.update(updated.id, { image_prompt: prompt })
+          Rag.index({
+            entity_id: final.id,
+            entity_type: "scene",
+            drama_id: did,
+            content: Rag.serialize.scene(final),
+          }).catch((err) => ragError("tool.rag.index.update_scene", err, { entity_id: final.id, drama_id: did }))
+          EventBus.emit(did, "scene")
+          log.info("tool.update_scene", { id: final.id, episode_id: params.episode_id })
+          return `S#${final.number} 장면이 업데이트되었습니다. (장소: ${final.location ?? "미정"})`
+        }
         const scene = Scene.create(params)
         const prompt = buildScenePrompt({ scene, drama: Drama.get(did) })
-        const updated = Scene.update(scene.id, { image_prompt: prompt })
+        const created = Scene.update(scene.id, { image_prompt: prompt })
         Rag.index({
-          entity_id: updated.id,
+          entity_id: created.id,
           entity_type: "scene",
           drama_id: did,
-          content: Rag.serialize.scene(updated),
-        }).catch((err) => ragError("tool.rag.index.create_scene", err, { entity_id: updated.id, drama_id: did }))
+          content: Rag.serialize.scene(created),
+        }).catch((err) => ragError("tool.rag.index.create_scene", err, { entity_id: created.id, drama_id: did }))
         EventBus.emit(did, "scene")
-        log.info("tool.create_scene", { id: scene.id, episode_id: params.episode_id })
-        return `S#${updated.number} 장면이 생성되었습니다. (장소: ${updated.location ?? "미정"})`
+        log.info("tool.create_scene", { id: created.id, episode_id: params.episode_id })
+        return `S#${created.number} 장면이 생성되었습니다. (장소: ${created.location ?? "미정"})`
       },
     }),
 
@@ -554,7 +602,8 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
     }),
 
     save_world: tool({
-      description: "세계관 요소를 기록합니다. 드라마의 배경, 문화, 규칙, 역사, 기술 등이 언급될 때 사용하세요.",
+      description:
+        "세계관 요소를 기록하거나 업데이트합니다. 같은 카테고리+이름이 이미 있으면 업데이트됩니다. 드라마의 배경, 문화, 규칙, 역사, 기술 등이 언급될 때 사용하세요.",
       inputSchema: z.object({
         category: z.enum(["location", "culture", "rule", "history", "technology"]).describe("카테고리"),
         name: z.string().describe("요소 이름"),
@@ -579,6 +628,21 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
             warning: undefined,
           }
         })
+        const existing = World.findByKey(did, params.category, params.name)
+        if (existing) {
+          const updated = World.update(existing.id, { description: params.description ?? existing.description })
+          Rag.index({
+            entity_id: updated.id,
+            entity_type: "world",
+            drama_id: did,
+            content: Rag.serialize.world(updated),
+          }).catch((err) => ragError("tool.rag.index.update_world", err, { entity_id: updated.id, drama_id: did }))
+          EventBus.emit(did, "world")
+          const conflict = warning.conflicts.find((item) => item.entity_id !== existing.id)
+          const message = warning.warning && conflict ? `\n${warning.warning}` : ""
+          log.info("tool.update_world", { id: updated.id, category: updated.category })
+          return `세계관 요소 [${updated.category}] "${updated.name}" 이(가) 업데이트되었습니다.${message}`
+        }
         const entry = World.create({ drama_id: did, ...params })
         Rag.index({
           entity_id: entry.id,
@@ -666,6 +730,103 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
         EventBus.emit(did, "plot")
         log.info("tool.resolve_plot_point", { id: updated.id })
         return `플롯 포인트 [${updated.type}] "${updated.description.slice(0, 40)}..." 이(가) 해결됨으로 표시되었습니다.`
+      },
+    }),
+
+    query_project: tool({
+      description:
+        "프로젝트 데이터를 조회합니다. 씬 ID, 에피소드 ID, 플롯 포인트 ID 등 다른 도구 호출에 필요한 식별자를 확인할 때 사용하세요.",
+      inputSchema: z.object({
+        type: z
+          .enum(["scenes", "episodes", "characters", "plot_points", "world"])
+          .describe("조회할 데이터 유형"),
+        episode_number: z.number().optional().describe("특정 에피소드의 씬만 조회할 때 회차 번호"),
+      }),
+      execute: async (params) => {
+        const did = requireDrama()
+
+        if (params.type === "scenes") {
+          const episodes = Episode.listByDrama(did)
+          const allScenes = Scene.listByDrama(did)
+          if (!allScenes.length) return "저장된 장면이 없습니다."
+
+          if (params.episode_number) {
+            const ep = episodes.find((e) => e.number === params.episode_number)
+            if (!ep) return `${params.episode_number}화를 찾을 수 없습니다.`
+            const filtered = allScenes.filter((s) => s.episode_id === ep.id)
+            if (!filtered.length) return `${params.episode_number}화에 저장된 장면이 없습니다.`
+            return filtered
+              .sort((a, b) => a.number - b.number)
+              .map(
+                (s) =>
+                  `S#${s.number} [ID: ${s.id}] ${s.location ?? "장소미정"} (${s.time_of_day ?? "시간미정"})${s.description ? ` — ${s.description.slice(0, 60)}` : ""}`,
+              )
+              .join("\n")
+          }
+
+          const grouped = new Map<string, typeof allScenes>()
+          for (const s of allScenes) {
+            const list = grouped.get(s.episode_id) ?? []
+            list.push(s)
+            grouped.set(s.episode_id, list)
+          }
+          const lines: string[] = []
+          for (const ep of episodes.sort((a, b) => a.number - b.number)) {
+            const scenes = grouped.get(ep.id)
+            if (!scenes?.length) continue
+            lines.push(`\n${ep.number}화 "${ep.title}" [에피소드 ID: ${ep.id}]`)
+            for (const s of scenes.sort((a, b) => a.number - b.number)) {
+              lines.push(
+                `  S#${s.number} [ID: ${s.id}] ${s.location ?? "장소미정"} (${s.time_of_day ?? "시간미정"})${s.description ? ` — ${s.description.slice(0, 60)}` : ""}`,
+              )
+            }
+          }
+          return lines.join("\n") || "저장된 장면이 없습니다."
+        }
+
+        if (params.type === "episodes") {
+          const episodes = Episode.listByDrama(did)
+          if (!episodes.length) return "저장된 에피소드가 없습니다."
+          return episodes
+            .sort((a, b) => a.number - b.number)
+            .map((e) => `${e.number}화 "${e.title}" [ID: ${e.id}] (${e.status})${e.synopsis ? ` — ${e.synopsis.slice(0, 80)}` : ""}`)
+            .join("\n")
+        }
+
+        if (params.type === "characters") {
+          const chars = Character.listByDrama(did)
+          if (!chars.length) return "저장된 캐릭터가 없습니다."
+          return chars
+            .map(
+              (c) =>
+                `${c.name} [ID: ${c.id}]${c.role ? ` (${c.role})` : ""}${c.occupation ? ` — ${c.occupation}` : ""}`,
+            )
+            .join("\n")
+        }
+
+        if (params.type === "plot_points") {
+          const points = PlotPoint.listByDrama(did)
+          if (!points.length) return "저장된 플롯 포인트가 없습니다."
+          return points
+            .map(
+              (p) =>
+                `[${p.type}] ${p.description.slice(0, 80)} [ID: ${p.id}]${p.resolved ? " ✓해결" : ""}${p.episode_id ? ` (ep: ${p.episode_id})` : ""}`,
+            )
+            .join("\n")
+        }
+
+        if (params.type === "world") {
+          const items = World.listByDrama(did)
+          if (!items.length) return "저장된 세계관 요소가 없습니다."
+          return items
+            .map(
+              (w) =>
+                `[${w.category}] ${w.name} [ID: ${w.id}]${w.description ? ` — ${w.description.slice(0, 80)}` : ""}`,
+            )
+            .join("\n")
+        }
+
+        return "알 수 없는 조회 유형입니다."
       },
     }),
 

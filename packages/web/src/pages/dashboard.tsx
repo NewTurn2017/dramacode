@@ -69,23 +69,23 @@ export default function Dashboard() {
       <div class="grid gap-3">
         <For each={dramas()}>
           {(drama) => (
-            <div class="flex items-center gap-4 p-4 bg-bg-card border border-border rounded-lg hover:border-accent/40 transition-colors group">
+            <div class="flex items-center gap-4 p-4 bg-bg-card border border-border rounded-lg hover:border-accent/40 transition-colors group overflow-hidden">
               <A href={`/drama/${drama.id}`} class="flex-1 min-w-0">
                 <h3 class="font-medium truncate group-hover:text-accent transition-colors">{drama.title}</h3>
-                <div class="flex items-center gap-3 mt-1 text-xs text-text-dim">
+                <div class="flex items-center gap-3 mt-1 text-xs text-text-dim truncate">
                   <Show when={drama.genre}>
-                    <span>{drama.genre}</span>
+                    <span class="shrink-0">{drama.genre}</span>
                   </Show>
                   <Show when={drama.tone}>
-                    <span>{drama.tone}</span>
+                    <span class="shrink-0">{drama.tone}</span>
                   </Show>
                   <Show when={drama.total_episodes}>
-                    <span>{drama.total_episodes}화</span>
+                    <span class="shrink-0">{drama.total_episodes}화</span>
                   </Show>
-                  <span>{formatDate(drama.time_updated)}</span>
+                  <span class="shrink-0">{formatDate(drama.time_updated)}</span>
                 </div>
                 <Show when={drama.logline}>
-                  <p class="text-sm text-text-dim mt-1 truncate">{drama.logline}</p>
+                  <p class="text-sm text-text-dim mt-1 line-clamp-2">{drama.logline}</p>
                 </Show>
               </A>
               <button

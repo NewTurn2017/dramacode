@@ -1,7 +1,9 @@
-import { Hono } from "hono"
+import { Hono, type MiddlewareHandler } from "hono"
 import { cors } from "hono/cors"
+import path from "path"
 import { Log } from "../util/log"
 import { Auth } from "../auth"
+import { OpenAIAuth } from "../plugin/openai"
 import { lazy } from "../util/lazy"
 import { SessionRoutes } from "./routes/session"
 import { ChatRoutes } from "./routes/chat"
@@ -9,6 +11,7 @@ import { DramaRoutes, EpisodeRoutes, SceneRoutes } from "./routes/drama"
 import { WriterRoutes } from "./routes/writer"
 import { EventRoutes } from "./routes/events"
 import { NotFoundError } from "../storage/db"
+import { cleanupDuplicates } from "../chat/structured"
 
 const log = Log.create({ service: "server" })
 
@@ -68,17 +71,68 @@ export namespace Server {
           const data = await Auth.all()
           const providers = Object.keys(data)
           return c.json({ providers })
+        })
+        .post("/auth/openai/login", async (c) => {
+          try {
+            const { url, userCode, done } = await OpenAIAuth.webLogin()
+            done
+              .then((login) =>
+                Auth.set("openai", {
+                  type: "oauth",
+                  refresh: login.refresh,
+                  access: login.access,
+                  expires: login.expires,
+                  accountId: login.accountId,
+                }),
+              )
+              .catch((err) => log.error("openai device auth failed", { error: String(err) }))
+            return c.json({ url, userCode })
+          } catch (err) {
+            log.error("openai device login failed", { error: String(err) })
+            return c.json({ error: "Failed to start device login" }, 500)
+          }
         }) as unknown as Hono,
   )
 
-  export function listen(opts: { port: number; hostname: string }) {
+  function withStatic(dir: string) {
+    const base = path.resolve(dir)
+    const indexFile = path.join(base, "index.html")
+
+    const files: MiddlewareHandler = async (c, next) => {
+      const reqPath = new URL(c.req.url).pathname
+      const filePath = path.resolve(base, "." + reqPath)
+      if (!filePath.startsWith(base) || filePath === base) return next()
+      try {
+        const file = Bun.file(filePath)
+        if (await file.exists()) return new Response(file)
+      } catch {}
+      return next()
+    }
+
+    const fallback: MiddlewareHandler = async (c) => {
+      if (path.extname(new URL(c.req.url).pathname)) return c.notFound()
+      return new Response(Bun.file(indexFile), {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      })
+    }
+
+    log.info("static", { dir: base })
+    return new Hono()
+      .get("/health", (c) => c.json({ ok: true }))
+      .route("/api", App())
+      .use("*", files)
+      .get("*", fallback)
+  }
+
+  export function listen(opts: { port: number; hostname: string; static?: string }) {
+    const handler = opts.static ? withStatic(opts.static) : App()
     const args = {
       hostname: opts.hostname,
-      fetch: App().fetch,
+      fetch: handler.fetch,
     } as const
     const tryServe = (port: number) => {
       try {
-        return Bun.serve({ ...args, port })
+        return Bun.serve({ ...args, port, idleTimeout: 255 })
       } catch {
         return undefined
       }
@@ -86,6 +140,7 @@ export namespace Server {
     const server = opts.port === 0 ? (tryServe(4097) ?? tryServe(0)) : tryServe(opts.port)
     if (!server) throw new Error(`Failed to start server on port ${opts.port}`)
     _url = server.url
+    cleanupDuplicates()
     return server
   }
 }
