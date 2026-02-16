@@ -8,11 +8,11 @@ AI 기반 드라마 각본 도구. OpenAI를 활용하여 캐릭터, 에피소�
 
 [최신 릴리스 페이지](https://github.com/NewTurn2017/dramacode/releases/latest)에서 본인 컴퓨터에 맞는 파일을 다운로드합니다.
 
-| 운영체제 | 다운로드 파일 |
-|----------|--------------|
-| **Mac (Apple Silicon)** — M1, M2, M3, M4 칩 | `DRAMACODE-mac-arm64.dmg` |
-| **Mac (Intel)** — 2020년 이전 Mac | `DRAMACODE-mac-x64.dmg` |
-| **Windows** | `dramacode-windows-x64.zip` |
+| 운영체제 | 다운로드 |
+|----------|----------|
+| **Mac (Apple Silicon)** — M1, M2, M3, M4 칩 | [DRAMACODE-mac-arm64.dmg](https://github.com/NewTurn2017/dramacode/releases/latest/download/DRAMACODE-mac-arm64.dmg) |
+| **Mac (Intel)** — 2020년 이전 Mac | [DRAMACODE-mac-x64.dmg](https://github.com/NewTurn2017/dramacode/releases/latest/download/DRAMACODE-mac-x64.dmg) |
+| **Windows** | [dramacode-windows-x64.zip](https://github.com/NewTurn2017/dramacode/releases/latest/download/dramacode-windows-x64.zip) |
 
 > **내 Mac이 어떤 칩인지 모르겠다면?**
 > 좌측 상단  메뉴 →「이 Mac에 관하여」→ 칩 항목이 "Apple M~"이면 Apple Silicon, "Intel"이면 Intel입니다.
