@@ -6,6 +6,7 @@ import { WriterStyle } from "../writer"
 import { Session } from "../session"
 import { Log } from "../util/log"
 import { EventBus } from "../server/routes/events"
+import { persistDraft, sanitizeDraft, snapshot, type StructuredDraft } from "./structured"
 
 const log = Log.create({ service: "chat.tools" })
 const VALIDATION_ERROR = "입력값이 올바르지 않습니다. 필드를 확인해주세요."
@@ -91,6 +92,147 @@ function ragError(action: string, err: unknown, extra?: Record<string, unknown>)
   })
 }
 
+const syncOperation = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("update_drama"),
+    genre: z.string().optional(),
+    tone: z.string().optional(),
+    logline: z.string().optional(),
+    setting: z.string().optional(),
+    total_episodes: z.number().int().positive().optional(),
+  }),
+  z.object({
+    type: z.literal("upsert_character"),
+    name: z.string(),
+    role: z.enum(["protagonist", "antagonist", "supporting", "extra"]).optional(),
+    age: z.string().optional(),
+    occupation: z.string().optional(),
+    personality: z.string().optional(),
+    backstory: z.string().optional(),
+    arc: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal("upsert_episode"),
+    number: z.number().int().positive(),
+    title: z.string(),
+    synopsis: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal("upsert_world"),
+    category: z.enum(["location", "culture", "rule", "history", "technology"]),
+    name: z.string(),
+    description: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal("upsert_plot"),
+    plot_type: z.enum(["setup", "conflict", "twist", "climax", "resolution", "foreshadowing"]),
+    description: z.string(),
+    episode_number: z.number().int().positive().optional(),
+  }),
+  z.object({
+    type: z.literal("upsert_scene"),
+    episode_number: z.number().int().positive(),
+    number: z.number().int().positive(),
+    location: z.string().optional(),
+    time_of_day: z.enum(["DAY", "NIGHT", "DAWN", "DUSK"]).optional(),
+    description: z.string().optional(),
+    dialogue: z.string().optional(),
+    notes: z.string().optional(),
+    characters_present: z.array(z.string()).optional(),
+  }),
+])
+
+export function syncProjectTool(input: { drama_id: string }) {
+  let count = 0
+  let stats: ReturnType<typeof persistDraft> | null = null
+
+  const sync_project_data = tool({
+    description:
+      "작가 대화에서 확정된 프로젝트 데이터 변경사항을 한 번에 동기화합니다. 반드시 operations 배열을 채워 호출하세요.",
+    inputSchema: z.object({
+      operations: z.array(syncOperation).min(1),
+    }),
+    execute: async (params) => {
+      count += 1
+      const draft: StructuredDraft = {
+        drama: {},
+        characters: [],
+        episodes: [],
+        world: [],
+        plot_points: [],
+        scenes: [],
+      }
+
+      for (const op of params.operations) {
+        if (op.type === "update_drama") {
+          draft.drama = {
+            ...draft.drama,
+            genre: op.genre ?? draft.drama.genre,
+            tone: op.tone ?? draft.drama.tone,
+            logline: op.logline ?? draft.drama.logline,
+            setting: op.setting ?? draft.drama.setting,
+            total_episodes: op.total_episodes ?? draft.drama.total_episodes,
+          }
+          continue
+        }
+        if (op.type === "upsert_character") {
+          draft.characters.push({
+            name: op.name,
+            role: op.role,
+            age: op.age,
+            occupation: op.occupation,
+            personality: op.personality,
+            backstory: op.backstory,
+            arc: op.arc,
+          })
+          continue
+        }
+        if (op.type === "upsert_episode") {
+          draft.episodes.push({ number: op.number, title: op.title, synopsis: op.synopsis })
+          continue
+        }
+        if (op.type === "upsert_world") {
+          draft.world.push({ category: op.category, name: op.name, description: op.description })
+          continue
+        }
+        if (op.type === "upsert_plot") {
+          draft.plot_points.push({
+            type: op.plot_type,
+            description: op.description,
+            episode_number: op.episode_number,
+          })
+          continue
+        }
+        if (op.type === "upsert_scene") {
+          draft.scenes.push({
+            episode_number: op.episode_number,
+            number: op.number,
+            location: op.location,
+            time_of_day: op.time_of_day,
+            description: op.description,
+            dialogue: op.dialogue,
+            notes: op.notes,
+            characters_present: op.characters_present,
+          })
+        }
+      }
+
+      const sanitized = sanitizeDraft(draft, snapshot(input.drama_id), {
+        allow_scenes: params.operations.some((item) => item.type === "upsert_scene"),
+      })
+      stats = persistDraft(input.drama_id, sanitized)
+      log.info("tool.sync_project_data", { drama_id: input.drama_id, ...stats })
+      return `동기화 완료: drama=${stats.drama}, chars=${stats.characters}, episodes=${stats.episodes}, world=${stats.world}, plot=${stats.plot_points}, scenes=${stats.scenes}`
+    },
+  })
+
+  return {
+    sync_project_data,
+    calls: () => count,
+    stats: () => stats,
+  }
+}
+
 export function dramaTools(input: { session_id: string; drama_id?: string | null }) {
   let dramaID = input.drama_id ?? null
 
@@ -112,6 +254,26 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
         total_episodes: z.number().optional().describe("총 에피소드 수"),
       }),
       execute: async (params) => {
+        if (dramaID) {
+          const updated = Drama.update(dramaID, {
+            title: params.title,
+            logline: params.logline,
+            genre: params.genre,
+            setting: params.setting,
+            tone: params.tone,
+            total_episodes: params.total_episodes,
+          })
+          Rag.index({
+            entity_id: updated.id,
+            entity_type: "drama",
+            drama_id: updated.id,
+            content: Rag.serialize.drama(updated),
+          }).catch((err) => ragError("tool.rag.index.create_drama_existing", err, { drama_id: updated.id }))
+          EventBus.emit(updated.id, "drama")
+          log.info("tool.create_drama_existing", { drama_id: updated.id, title: updated.title })
+          return `이미 연결된 프로젝트를 업데이트했습니다. (ID: ${updated.id})`
+        }
+
         const drama = Drama.create(params)
         dramaID = drama.id
         Session.linkDrama(input.session_id, drama.id)
@@ -155,6 +317,12 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
           entity_type: "character",
           content: probe,
           drama_id: did,
+        }).catch((err) => {
+          ragError("tool.rag.detect.character", err, { drama_id: did, name: params.name })
+          return {
+            conflicts: [] as Awaited<ReturnType<typeof Rag.detectContradiction>>["conflicts"],
+            warning: undefined,
+          }
         })
         if (existing) {
           const updated = Character.update(existing.id, params)
@@ -345,6 +513,12 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
           entity_type: "world",
           content: probe,
           drama_id: did,
+        }).catch((err) => {
+          ragError("tool.rag.detect.world", err, { drama_id: did, name: params.name })
+          return {
+            conflicts: [] as Awaited<ReturnType<typeof Rag.detectContradiction>>["conflicts"],
+            warning: undefined,
+          }
         })
         const entry = World.create({ drama_id: did, ...params })
         Rag.index({

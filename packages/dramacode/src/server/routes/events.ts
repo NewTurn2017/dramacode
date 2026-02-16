@@ -1,9 +1,14 @@
 import { Hono } from "hono"
 
-export const EventBus = {
-  listeners: new Map<string, Set<(event: string) => void>>(),
+export type DramaEvent = {
+  type: string
+  payload?: unknown
+}
 
-  subscribe(dramaId: string, callback: (event: string) => void) {
+export const EventBus = {
+  listeners: new Map<string, Set<(event: DramaEvent) => void>>(),
+
+  subscribe(dramaId: string, callback: (event: DramaEvent) => void) {
     if (!this.listeners.has(dramaId)) this.listeners.set(dramaId, new Set())
     this.listeners.get(dramaId)!.add(callback)
     return () => {
@@ -12,9 +17,10 @@ export const EventBus = {
     }
   },
 
-  emit(dramaId: string, type: string) {
+  emit(dramaId: string, type: string, payload?: unknown) {
+    const event = { type, payload }
     for (const cb of this.listeners.get(dramaId) ?? []) {
-      cb(type)
+      cb(event)
     }
   },
 }
@@ -29,9 +35,9 @@ export function EventRoutes() {
       start(controller) {
         controller.enqueue(encoder.encode("data: connected\n\n"))
 
-        const unsub = EventBus.subscribe(dramaId, (type) => {
+        const unsub = EventBus.subscribe(dramaId, (event) => {
           try {
-            controller.enqueue(encoder.encode(`data: ${type}\n\n`))
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
           } catch {}
         })
 

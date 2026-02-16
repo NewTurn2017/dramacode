@@ -1,6 +1,14 @@
 import { createSignal, createResource, createEffect, For, Show, Switch, Match, onCleanup } from "solid-js"
 import { useParams, A } from "@solidjs/router"
-import { api, type Session, type Scene, type ScenePrompt, type CharacterArc } from "@/lib/api"
+import {
+  api,
+  type Session,
+  type Scene,
+  type ScenePrompt,
+  type CharacterArc,
+  type AutosaveStatus,
+  type AutosaveEntry,
+} from "@/lib/api"
 import { ChatPanel } from "@/components/chat-panel"
 import { ConfirmModal } from "@/components/confirm-modal"
 import { ThinkingIndicator } from "@/components/thinking"
@@ -83,6 +91,7 @@ export default function DramaDetail() {
   const [world, { refetch: refetchWorld }] = createResource(dramaId, api.drama.world)
   const [arcs, { refetch: refetchArcs }] = createResource(dramaId, api.drama.arcs)
   const [plotPoints, { refetch: refetchPlot }] = createResource(dramaId, api.drama.plotPoints)
+  const [autosave, { refetch: refetchAutosave }] = createResource(dramaId, api.drama.autosave)
 
   let sse: EventSource | undefined
   let pollTimer: ReturnType<typeof setInterval> | undefined
@@ -95,6 +104,7 @@ export default function DramaDetail() {
     refetchWorld()
     refetchPlot()
     refetchArcs()
+    refetchAutosave()
   }
 
   function handleEvent(type: string) {
@@ -104,6 +114,7 @@ export default function DramaDetail() {
     else if (type === "world") refetchWorld()
     else if (type === "plot") refetchPlot()
     else if (type === "arc") refetchArcs()
+    else if (type === "structured") refetchAutosave()
   }
 
   function setPollInterval(ms: number) {
@@ -126,6 +137,28 @@ export default function DramaDetail() {
           setPollInterval(20000)
           return
         }
+        try {
+          const parsed = JSON.parse(event.data) as { type?: string; payload?: unknown }
+          if (parsed.type === "structured" && parsed.payload && typeof parsed.payload === "object") {
+            const payload = parsed.payload as Partial<AutosaveEntry>
+            if (payload.status && payload.source && typeof payload.retries === "number") {
+              const entry: AutosaveEntry = {
+                time: typeof payload.time === "number" ? payload.time : Date.now(),
+                status: payload.status,
+                source: payload.source,
+                retries: payload.retries,
+                extracted: payload.extracted,
+                persisted: payload.persisted,
+                error: payload.error,
+              }
+              setLiveStructured((prev) => [entry, ...prev].slice(0, 20))
+            }
+          }
+          if (parsed.type) {
+            handleEvent(parsed.type)
+            return
+          }
+        } catch {}
         handleEvent(event.data)
       }
 
@@ -160,6 +193,11 @@ export default function DramaDetail() {
   })
   const [panelOpen, setPanelOpen] = createSignal(true)
   const [flash, setFlash] = createSignal(false)
+  const [liveStructured, setLiveStructured] = createSignal<AutosaveEntry[]>([])
+  const [resyncing, setResyncing] = createSignal(false)
+  const [resyncSessionLimit, setResyncSessionLimit] = createSignal(20)
+  const [resyncPairLimit, setResyncPairLimit] = createSignal(20)
+  const [autosaveFilter, setAutosaveFilter] = createSignal<"all" | "failed" | "ok">("all")
 
   let prev = { c: 0, e: 0, s: 0, w: 0, p: 0 }
   createEffect(() => {
@@ -188,6 +226,7 @@ export default function DramaDetail() {
     dramaId()
     setTabs([])
     setActive(null)
+    setLiveStructured([])
   })
 
   function sessionLabel(s: Session) {
@@ -275,6 +314,36 @@ export default function DramaDetail() {
     navigator.clipboard.writeText(JSON.stringify(prompt, null, 2))
     setCopied(sceneId)
     setTimeout(() => setCopied(null), 1500)
+  }
+
+  function autosaveTone(status: AutosaveStatus | undefined) {
+    if (!status || status.total === 0) return "text-text-dim"
+    if (status.failed > 0) return "text-amber-400"
+    return "text-emerald-400"
+  }
+
+  function recentAutosave(status: AutosaveStatus | undefined) {
+    if (!status) return liveStructured()
+    const merged = [...liveStructured(), ...status.recent]
+    if (autosaveFilter() === "failed") return merged.filter((item) => item.status === "error").slice(0, 10)
+    if (autosaveFilter() === "ok") return merged.filter((item) => item.status === "ok").slice(0, 10)
+    return merged.slice(0, 10)
+  }
+
+  async function runResync() {
+    if (resyncing()) return
+    const id = dramaId()
+    if (!id) return
+    setResyncing(true)
+    try {
+      await api.drama.autosaveResync(id, {
+        session_limit: resyncSessionLimit(),
+        pair_limit: resyncPairLimit(),
+      })
+      refetchAll()
+    } finally {
+      setResyncing(false)
+    }
   }
 
   return (
@@ -566,6 +635,130 @@ export default function DramaDetail() {
                       </div>
                     </div>
                   </Show>
+
+                  <div class="border-b border-border/50">
+                    <div class="px-4 py-2.5 flex items-center gap-2">
+                      <span class="text-sm font-medium">자동 구조화 상태</span>
+                      <div class="ml-auto flex items-center gap-1">
+                        <select
+                          value={String(resyncSessionLimit())}
+                          onInput={(e) => setResyncSessionLimit(Number(e.currentTarget.value))}
+                          class="text-[10px] px-1.5 py-1 rounded bg-bg-card border border-border/60 text-text-dim"
+                        >
+                          <option value="10">세션 10</option>
+                          <option value="20">세션 20</option>
+                          <option value="40">세션 40</option>
+                        </select>
+                        <select
+                          value={String(resyncPairLimit())}
+                          onInput={(e) => setResyncPairLimit(Number(e.currentTarget.value))}
+                          class="text-[10px] px-1.5 py-1 rounded bg-bg-card border border-border/60 text-text-dim"
+                        >
+                          <option value="10">페어 10</option>
+                          <option value="20">페어 20</option>
+                          <option value="50">페어 50</option>
+                        </select>
+                      </div>
+                      <button
+                        onClick={runResync}
+                        disabled={resyncing()}
+                        class="text-[10px] px-2 py-1 rounded bg-accent/15 text-accent hover:bg-accent/25 disabled:opacity-50 transition-colors"
+                      >
+                        {resyncing() ? "재동기화 중..." : "최근 대화 재동기화"}
+                      </button>
+                      <Show when={autosave()}>
+                        {(status) => (
+                          <span class={`text-[11px] ${autosaveTone(status())}`}>
+                            성공 {status().success} / 실패 {status().failed}
+                          </span>
+                        )}
+                      </Show>
+                    </div>
+                    <div class="px-3 pb-3 space-y-2">
+                      <Show when={autosave()} fallback={<p class="text-xs text-text-dim">데이터 수집 중...</p>}>
+                        {(status) => (
+                          <>
+                            <div class="flex items-center gap-1.5 text-[10px]">
+                              <button
+                                onClick={() => setAutosaveFilter("all")}
+                                class="px-1.5 py-0.5 rounded border border-border/60"
+                                classList={{
+                                  "text-accent bg-accent/10": autosaveFilter() === "all",
+                                  "text-text-dim": autosaveFilter() !== "all",
+                                }}
+                              >
+                                전체
+                              </button>
+                              <button
+                                onClick={() => setAutosaveFilter("failed")}
+                                class="px-1.5 py-0.5 rounded border border-border/60"
+                                classList={{
+                                  "text-amber-300 bg-amber-500/10": autosaveFilter() === "failed",
+                                  "text-text-dim": autosaveFilter() !== "failed",
+                                }}
+                              >
+                                실패만
+                              </button>
+                              <button
+                                onClick={() => setAutosaveFilter("ok")}
+                                class="px-1.5 py-0.5 rounded border border-border/60"
+                                classList={{
+                                  "text-emerald-300 bg-emerald-500/10": autosaveFilter() === "ok",
+                                  "text-text-dim": autosaveFilter() !== "ok",
+                                }}
+                              >
+                                성공만
+                              </button>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2 text-[11px]">
+                              <div class="rounded border border-border/60 bg-bg-card px-2 py-1.5">
+                                추출: 캐릭터 {status().extracted.characters}, 에피소드 {status().extracted.episodes},
+                                세계관 {status().extracted.world}
+                              </div>
+                              <div class="rounded border border-border/60 bg-bg-card px-2 py-1.5">
+                                저장: 캐릭터 {status().persisted.characters}, 에피소드 {status().persisted.episodes},
+                                세계관 {status().persisted.world}
+                              </div>
+                            </div>
+                            <div class="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                              <For each={recentAutosave(status())}>
+                                {(item) => (
+                                  <div class="rounded border border-border/60 bg-bg-card px-2 py-1.5 text-[11px]">
+                                    <div class="flex items-center gap-2">
+                                      <span class={item.status === "ok" ? "text-emerald-400" : "text-amber-400"}>
+                                        {item.status === "ok" ? "성공" : "실패"}
+                                      </span>
+                                      <span class="text-text-dim">{item.source}</span>
+                                      <span class="text-text-dim ml-auto">재시도 {item.retries}</span>
+                                    </div>
+                                    <Show when={item.persisted}>
+                                      {(p) => (
+                                        <p class="text-text-dim mt-0.5">
+                                          저장: 인물 {p().characters}, 회차 {p().episodes}, 세계관 {p().world}, 플롯{" "}
+                                          {p().plot_points}, 장면 {p().scenes}
+                                        </p>
+                                      )}
+                                    </Show>
+                                    <Show when={item.extracted}>
+                                      {(x) => (
+                                        <p class="text-text-dim/80 mt-0.5">
+                                          추출: 인물 {x().characters}, 회차 {x().episodes}, 세계관 {x().world}, 플롯{" "}
+                                          {x().plot_points}, 장면 {x().scenes}
+                                        </p>
+                                      )}
+                                    </Show>
+                                    <Show when={item.error}>
+                                      <p class="text-amber-300 mt-0.5 line-clamp-2">{item.error}</p>
+                                    </Show>
+                                  </div>
+                                )}
+                              </For>
+                            </div>
+                          </>
+                        )}
+                      </Show>
+                    </div>
+                  </div>
                 </aside>
               </Show>
 

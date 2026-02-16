@@ -150,6 +150,42 @@ export type WriterStyle = {
   time_updated: number
 }
 
+export type AutosaveCounts = {
+  drama: number
+  characters: number
+  episodes: number
+  world: number
+  plot_points: number
+  scenes: number
+}
+
+export type AutosaveEntry = {
+  time: number
+  status: "ok" | "error"
+  source: "send" | "stream" | "resync"
+  retries: number
+  extracted?: AutosaveCounts
+  persisted?: AutosaveCounts
+  error?: string
+}
+
+export type AutosaveStatus = {
+  total: number
+  success: number
+  failed: number
+  extracted: AutosaveCounts
+  persisted: AutosaveCounts
+  recent: AutosaveEntry[]
+}
+
+export type AutosaveResyncResult = {
+  session_limit: number
+  pair_limit: number
+  scanned_sessions: number
+  processed_pairs: number
+  metrics: AutosaveStatus
+}
+
 export const api = {
   drama: {
     list: () => get<Drama[]>("/drama"),
@@ -161,6 +197,9 @@ export const api = {
     episodes: (id: string) => get<Episode[]>(`/drama/${id}/episodes`),
     scenes: (id: string) => get<Scene[]>(`/drama/${id}/scenes`),
     world: (id: string) => get<World[]>(`/drama/${id}/world`),
+    autosave: (id: string) => get<AutosaveStatus>(`/drama/${id}/autosave`),
+    autosaveResync: (id: string, body?: { session_limit?: number; pair_limit?: number }) =>
+      post<AutosaveResyncResult>(`/drama/${id}/autosave/resync`, body ?? {}),
     arcs: (id: string) => get<CharacterArc[]>(`/drama/${id}/arcs`),
     plotPoints: (id: string) => get<PlotPoint[]>(`/drama/${id}/plot-points`),
   },

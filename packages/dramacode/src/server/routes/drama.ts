@@ -1,5 +1,7 @@
 import { Hono } from "hono"
 import { Drama, Episode, Scene, Character, CharacterArc, World, PlotPoint } from "../../drama"
+import { AutosaveMetrics } from "../../chat/autosave-metrics"
+import { Chat } from "../../chat"
 
 export function DramaRoutes() {
   return new Hono()
@@ -34,6 +36,22 @@ export function DramaRoutes() {
     .get("/:id/world", (c) => {
       const category = c.req.query("category")
       return c.json(World.listByDrama(c.req.param("id"), category))
+    })
+    .get("/:id/autosave", (c) => c.json(AutosaveMetrics.get(c.req.param("id"))))
+    .post("/:id/autosave/resync", async (c) => {
+      const body = await c.req
+        .json<{
+          session_limit?: number
+          pair_limit?: number
+        }>()
+        .catch(() => ({ session_limit: undefined, pair_limit: undefined }))
+      return c.json(
+        await Chat.resync({
+          drama_id: c.req.param("id"),
+          session_limit: body.session_limit,
+          pair_limit: body.pair_limit,
+        }),
+      )
     })
     .post("/:id/world", async (c) => {
       const body = await c.req.json<Omit<Parameters<typeof World.create>[0], "drama_id">>()
