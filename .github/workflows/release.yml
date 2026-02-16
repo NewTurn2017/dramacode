@@ -123,6 +123,8 @@ jobs:
 
       - name: macOS — Notarize & Staple
         if: runner.os == 'macOS'
+        continue-on-error: true
+        timeout-minutes: 15
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -137,7 +139,7 @@ jobs:
             --apple-id "$APPLE_ID" \
             --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_APP_PASSWORD" \
-            --wait
+            --wait --timeout 10m
 
           xcrun stapler staple "$DMG_NAME"
           xcrun stapler validate "$DMG_NAME"
