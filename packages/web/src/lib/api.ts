@@ -212,17 +212,19 @@ export const api = {
     updateTitle: (id: string, title: string) => patch<Session>(`/session/${id}`, { title }),
   },
   chat: {
-    stream: (sessionId: string, content: string) =>
+    stream: (sessionId: string, content: string, signal?: AbortSignal) =>
       fetch(`${BASE}/chat/${sessionId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),
+        signal,
       }),
-    greet: (sessionId: string) =>
+    greet: (sessionId: string, signal?: AbortSignal) =>
       fetch(`${BASE}/chat/${sessionId}/greet`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}",
+        signal,
       }),
   },
   writer: {

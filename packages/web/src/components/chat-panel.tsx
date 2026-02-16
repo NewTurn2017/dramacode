@@ -1,8 +1,10 @@
-import { createSignal, createEffect, For, Show, onMount } from "solid-js"
+import { createSignal, createEffect, For, Show, onMount, onCleanup } from "solid-js"
 import { api, type Message } from "@/lib/api"
 import { runWithPending } from "@/lib/async-guard"
 import { Markdown } from "./markdown"
 import { ThinkingIndicator } from "./thinking"
+
+const STREAM_STALL_MS = 30_000
 
 export function ChatPanel(props: { sessionId: string; visible: boolean; onTitleChange?: (title: string) => void }) {
   const [messages, setMessages] = createSignal<Message[]>([])
@@ -12,6 +14,9 @@ export function ChatPanel(props: { sessionId: string; visible: boolean; onTitleC
   const [loaded, setLoaded] = createSignal(false)
   let scrollRef: HTMLDivElement | undefined
   let inputRef: HTMLTextAreaElement | undefined
+  let abortRef: AbortController | undefined
+
+  onCleanup(() => abortRef?.abort())
 
   function scrollToBottom(instant = false) {
     if (!scrollRef) return
@@ -28,21 +33,43 @@ export function ChatPanel(props: { sessionId: string; visible: boolean; onTitleC
     if (props.visible) requestAnimationFrame(() => scrollToBottom())
   })
 
+  async function consumeStream(res: Response): Promise<string> {
+    if (!res.ok || !res.body) return ""
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let full = ""
+    let staleTimer: ReturnType<typeof setTimeout> | undefined
+    try {
+      while (true) {
+        clearTimeout(staleTimer)
+        staleTimer = setTimeout(() => reader.cancel(), STREAM_STALL_MS)
+        const { done, value } = await reader.read()
+        if (done) break
+        full += decoder.decode(value, { stream: true })
+        setStreamText(full)
+      }
+    } catch {
+      /* expected: stale-cancel / abort / network drop */
+    } finally {
+      clearTimeout(staleTimer)
+      reader.releaseLock()
+    }
+    return full
+  }
+
+  function focusInput() {
+    requestAnimationFrame(() => inputRef?.focus())
+  }
+
   async function runGreet() {
+    abortRef?.abort()
+    abortRef = new AbortController()
+    const { signal } = abortRef
     await runWithPending(setStreaming, async () => {
       setStreamText("")
       try {
-        const res = await api.chat.greet(props.sessionId)
-        if (!res.ok || !res.body) return
-        const reader = res.body.getReader()
-        const decoder = new TextDecoder()
-        let full = ""
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          full += decoder.decode(value, { stream: true })
-          setStreamText(full)
-        }
+        const res = await api.chat.greet(props.sessionId, signal)
+        const full = await consumeStream(res)
         if (full.trim()) {
           setMessages([
             {
@@ -56,9 +83,9 @@ export function ChatPanel(props: { sessionId: string; visible: boolean; onTitleC
         }
       } finally {
         setStreamText("")
-        requestAnimationFrame(() => inputRef?.focus())
       }
     }).catch(() => undefined)
+    focusInput()
   }
 
   onMount(async () => {
@@ -94,33 +121,29 @@ export function ChatPanel(props: { sessionId: string; visible: boolean; onTitleC
         time_created: Date.now(),
       },
     ])
+
+    abortRef?.abort()
+    abortRef = new AbortController()
+    const { signal } = abortRef
+
     await runWithPending(setStreaming, async () => {
       setStreamText("")
       try {
-        const res = await api.chat.stream(props.sessionId, text)
-        if (!res.ok || !res.body) return
+        const res = await api.chat.stream(props.sessionId, text, signal)
+        const full = await consumeStream(res)
 
-        const reader = res.body.getReader()
-        const decoder = new TextDecoder()
-        let full = ""
-
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          full += decoder.decode(value, { stream: true })
-          setStreamText(full)
+        if (full.trim()) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `temp-assistant-${Date.now()}`,
+              session_id: props.sessionId,
+              role: "assistant",
+              content: full,
+              time_created: Date.now(),
+            },
+          ])
         }
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `temp-assistant-${Date.now()}`,
-            session_id: props.sessionId,
-            role: "assistant",
-            content: full,
-            time_created: Date.now(),
-          },
-        ])
 
         if (messages().filter((m) => m.role === "user").length <= 1) {
           const label = text.length > 30 ? text.slice(0, 30) + "…" : text
@@ -129,9 +152,9 @@ export function ChatPanel(props: { sessionId: string; visible: boolean; onTitleC
         }
       } finally {
         setStreamText("")
-        requestAnimationFrame(() => inputRef?.focus())
       }
     }).catch(() => undefined)
+    focusInput()
   }
 
   function handleKeyDown(e: KeyboardEvent) {
