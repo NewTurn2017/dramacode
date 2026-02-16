@@ -16,7 +16,7 @@ jobs:
           - os: macos-latest
             target: bun-darwin-arm64
             asset: dramacode-darwin-arm64.zip
-          - os: macos-13
+          - os: macos-latest
             target: bun-darwin-x64
             asset: dramacode-darwin-x64.zip
           - os: windows-latest
@@ -33,6 +33,16 @@ jobs:
 
       - name: Install dependencies
         run: bun install
+
+      - name: Install target sqlite-vec
+        run: |
+          TARGET="${{ matrix.target }}"
+          VEC_OS="${TARGET#bun-}"
+          VEC_OS="${VEC_OS%-*}"
+          VEC_ARCH="${TARGET##*-}"
+          if [ "$VEC_OS" = "win32" ]; then VEC_OS="windows"; fi
+          bun add "sqlite-vec-${VEC_OS}-${VEC_ARCH}" --no-save 2>/dev/null || true
+        shell: bash
 
       - name: Build
         run: bun run scripts/build.ts ${{ matrix.target }}
@@ -55,7 +65,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-          merge-multiple: true
 
       - name: List artifacts
         run: find artifacts -type f | head -20
@@ -65,4 +74,4 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            artifacts/*.zip
+            artifacts/**/*.zip
