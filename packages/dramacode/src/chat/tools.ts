@@ -155,6 +155,19 @@ const syncOperation = z.discriminatedUnion("type", [
     relation_type: z.string(),
     description: z.string().optional(),
   }),
+  z.object({
+    type: z.literal("delete_character"),
+    name: z.string(),
+  }),
+  z.object({
+    type: z.literal("delete_episode"),
+    number: z.number().int().positive(),
+  }),
+  z.object({
+    type: z.literal("delete_world"),
+    category: z.enum(["location", "culture", "rule", "history", "technology"]),
+    name: z.string(),
+  }),
 ])
 
 export function syncProjectTool(input: { drama_id: string }) {
@@ -238,6 +251,35 @@ export function syncProjectTool(input: { drama_id: string }) {
       })
       stats = persistDraft(input.drama_id, sanitized)
 
+      let deletes = 0
+      for (const op of params.operations) {
+        if (op.type === "delete_character") {
+          const char = Character.findByName(input.drama_id, op.name)
+          if (char) { Character.remove(char.id); Rag.remove(char.id); deletes++ }
+          continue
+        }
+        if (op.type === "delete_episode") {
+          const ep = Episode.findByNumber(input.drama_id, op.number)
+          if (ep) {
+            const scenes = Scene.listByEpisode(ep.id)
+            for (const s of scenes) { Scene.remove(s.id); Rag.remove(s.id) }
+            Episode.remove(ep.id); Rag.remove(ep.id); deletes++
+          }
+          continue
+        }
+        if (op.type === "delete_world") {
+          const entry = World.findByKey(input.drama_id, op.category, op.name)
+          if (entry) { World.remove(entry.id); Rag.remove(entry.id); deletes++ }
+          continue
+        }
+      }
+      if (deletes) {
+        EventBus.emit(input.drama_id, "character")
+        EventBus.emit(input.drama_id, "episode")
+        EventBus.emit(input.drama_id, "scene")
+        EventBus.emit(input.drama_id, "world")
+      }
+
       let rels = 0
       for (const op of params.operations) {
         if (op.type !== "upsert_relationship") continue
@@ -254,8 +296,8 @@ export function syncProjectTool(input: { drama_id: string }) {
       }
       if (rels) EventBus.emit(input.drama_id, "character")
 
-      log.info("tool.sync_project_data", { drama_id: input.drama_id, ...stats, relationships: rels })
-      return `동기화 완료: drama=${stats.drama}, chars=${stats.characters}, episodes=${stats.episodes}, world=${stats.world}, plot=${stats.plot_points}, scenes=${stats.scenes}, rels=${rels}`
+      log.info("tool.sync_project_data", { drama_id: input.drama_id, ...stats, relationships: rels, deletes })
+      return `동기화 완료: drama=${stats.drama}, chars=${stats.characters}, episodes=${stats.episodes}, world=${stats.world}, plot=${stats.plot_points}, scenes=${stats.scenes}, rels=${rels}, deletes=${deletes}`
     },
   })
 
@@ -827,6 +869,188 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
         }
 
         return "알 수 없는 조회 유형입니다."
+      },
+    }),
+
+    rename_character: tool({
+      description:
+        "캐릭터 이름을 변경합니다. 캐릭터 레코드의 이름을 바꾸고, 모든 장면의 characters_present에서 이전 이름을 새 이름으로 교체하고, 에피소드 시놉시스/장면 대사 등 텍스트 필드에서도 이전 이름을 새 이름으로 치환합니다. 이름 변경 시 반드시 이 도구를 사용하세요.",
+      inputSchema: z.object({
+        old_name: z.string().describe("이전 캐릭터 이름"),
+        new_name: z.string().describe("새 캐릭터 이름"),
+      }),
+      execute: async (params) => {
+        const did = requireDrama()
+        const char = Character.findByName(did, params.old_name)
+        if (!char) return `캐릭터 "${params.old_name}"을(를) 찾을 수 없습니다.`
+
+        // 1. 캐릭터 이름 변경
+        const updated = Character.update(char.id, { name: params.new_name })
+        Rag.index({
+          entity_id: updated.id,
+          entity_type: "character",
+          drama_id: did,
+          content: Rag.serialize.character(updated),
+        }).catch((err) => ragError("tool.rag.index.rename_character", err, { entity_id: updated.id }))
+
+        // 2. 모든 장면의 characters_present에서 이름 교체 + 대사/설명 텍스트 치환
+        const allScenes = Scene.listByDrama(did)
+        let scenesUpdated = 0
+        for (const scene of allScenes) {
+          let changed = false
+          const updates: Partial<{ characters_present: string[]; dialogue: string; description: string; notes: string }> = {}
+
+          if (scene.characters_present?.includes(params.old_name)) {
+            updates.characters_present = scene.characters_present.map((n) =>
+              n === params.old_name ? params.new_name : n,
+            )
+            changed = true
+          }
+          if (scene.dialogue?.includes(params.old_name)) {
+            updates.dialogue = scene.dialogue.replaceAll(params.old_name, params.new_name)
+            changed = true
+          }
+          if (scene.description?.includes(params.old_name)) {
+            updates.description = scene.description.replaceAll(params.old_name, params.new_name)
+            changed = true
+          }
+          if (scene.notes?.includes(params.old_name)) {
+            updates.notes = scene.notes.replaceAll(params.old_name, params.new_name)
+            changed = true
+          }
+
+          if (changed) {
+            const s = Scene.update(scene.id, updates)
+            const prompt = buildScenePrompt({ scene: s, drama: Drama.get(did) })
+            Scene.update(scene.id, { image_prompt: prompt })
+            Rag.index({
+              entity_id: s.id,
+              entity_type: "scene",
+              drama_id: did,
+              content: Rag.serialize.scene(s),
+            }).catch((err) => ragError("tool.rag.index.rename_scene", err, { entity_id: s.id }))
+            scenesUpdated++
+          }
+        }
+
+        // 3. 에피소드 시놉시스에서 이름 치환
+        const episodes = Episode.listByDrama(did)
+        let episodesUpdated = 0
+        for (const ep of episodes) {
+          if (ep.synopsis?.includes(params.old_name)) {
+            Episode.update(ep.id, { synopsis: ep.synopsis.replaceAll(params.old_name, params.new_name) })
+            episodesUpdated++
+          }
+        }
+
+        EventBus.emit(did, "character")
+        EventBus.emit(did, "scene")
+        EventBus.emit(did, "episode")
+        log.info("tool.rename_character", {
+          id: char.id,
+          old: params.old_name,
+          new: params.new_name,
+          scenes: scenesUpdated,
+          episodes: episodesUpdated,
+        })
+        return `캐릭터 "${params.old_name}" → "${params.new_name}" 이름 변경 완료. 장면 ${scenesUpdated}개, 에피소드 ${episodesUpdated}개 텍스트 업데이트됨.`
+      },
+    }),
+
+    delete_character: tool({
+      description:
+        "캐릭터를 삭제합니다. 작가가 캐릭터 삭제를 요청할 때 사용하세요. 이름 변경이 목적이면 rename_character를 사용하세요.",
+      inputSchema: z.object({
+        name: z.string().describe("삭제할 캐릭터 이름"),
+      }),
+      execute: async (params) => {
+        const did = requireDrama()
+        const char = Character.findByName(did, params.name)
+        if (!char) return `캐릭터 "${params.name}"을(를) 찾을 수 없습니다.`
+        Character.remove(char.id)
+        Rag.remove(char.id)
+        EventBus.emit(did, "character")
+        log.info("tool.delete_character", { id: char.id, name: params.name })
+        return `캐릭터 "${params.name}"이(가) 삭제되었습니다.`
+      },
+    }),
+
+    delete_episode: tool({
+      description:
+        "에피소드를 삭제합니다. 해당 에피소드에 속한 장면도 함께 삭제됩니다. 작가가 에피소드 삭제를 요청할 때 사용하세요.",
+      inputSchema: z.object({
+        number: z.number().describe("삭제할 에피소드 회차 번호"),
+      }),
+      execute: async (params) => {
+        const did = requireDrama()
+        const ep = Episode.findByNumber(did, params.number)
+        if (!ep) return `${params.number}화를 찾을 수 없습니다.`
+        const scenes = Scene.listByEpisode(ep.id)
+        for (const s of scenes) {
+          Scene.remove(s.id)
+          Rag.remove(s.id)
+        }
+        Episode.remove(ep.id)
+        Rag.remove(ep.id)
+        EventBus.emit(did, "episode")
+        EventBus.emit(did, "scene")
+        log.info("tool.delete_episode", { id: ep.id, number: params.number, scenes_removed: scenes.length })
+        return `${params.number}화 "${ep.title}"이(가) 삭제되었습니다. (장면 ${scenes.length}개 함께 삭제)`
+      },
+    }),
+
+    delete_scene: tool({
+      description: "장면(씬)을 삭제합니다. 작가가 특정 장면 삭제를 요청할 때 사용하세요.",
+      inputSchema: z.object({
+        episode_number: z.number().describe("에피소드 회차 번호"),
+        scene_number: z.number().describe("삭제할 장면 번호"),
+      }),
+      execute: async (params) => {
+        const did = requireDrama()
+        const ep = Episode.findByNumber(did, params.episode_number)
+        if (!ep) return `${params.episode_number}화를 찾을 수 없습니다.`
+        const scene = Scene.findByNumber(ep.id, params.scene_number)
+        if (!scene) return `${params.episode_number}화 S#${params.scene_number} 장면을 찾을 수 없습니다.`
+        Scene.remove(scene.id)
+        Rag.remove(scene.id)
+        EventBus.emit(did, "scene")
+        log.info("tool.delete_scene", { id: scene.id, episode: params.episode_number, scene: params.scene_number })
+        return `${params.episode_number}화 S#${params.scene_number} 장면이 삭제되었습니다.`
+      },
+    }),
+
+    delete_world: tool({
+      description: "세계관 요소를 삭제합니다. 작가가 세계관 항목 삭제를 요청할 때 사용하세요.",
+      inputSchema: z.object({
+        category: z.enum(["location", "culture", "rule", "history", "technology"]).describe("카테고리"),
+        name: z.string().describe("삭제할 요소 이름"),
+      }),
+      execute: async (params) => {
+        const did = requireDrama()
+        const entry = World.findByKey(did, params.category, params.name)
+        if (!entry) return `세계관 요소 [${params.category}] "${params.name}"을(를) 찾을 수 없습니다.`
+        World.remove(entry.id)
+        Rag.remove(entry.id)
+        EventBus.emit(did, "world")
+        log.info("tool.delete_world", { id: entry.id, category: params.category, name: params.name })
+        return `세계관 요소 [${params.category}] "${params.name}"이(가) 삭제되었습니다.`
+      },
+    }),
+
+    delete_plot_point: tool({
+      description: "플롯 포인트를 삭제합니다. 작가가 특정 플롯 포인트 삭제를 요청할 때 사용하세요.",
+      inputSchema: z.object({
+        plot_point_id: z.string().describe("삭제할 플롯 포인트 ID"),
+      }),
+      execute: async (params) => {
+        const did = requireDrama()
+        const point = PlotPoint.get(params.plot_point_id)
+        if (point.drama_id !== did) throw new Error("현재 드라마에 속한 플롯 포인트만 삭제할 수 있습니다.")
+        PlotPoint.remove(params.plot_point_id)
+        Rag.remove(params.plot_point_id)
+        EventBus.emit(did, "plot")
+        log.info("tool.delete_plot_point", { id: params.plot_point_id })
+        return `플롯 포인트 [${point.type}] "${point.description.slice(0, 40)}..."이(가) 삭제되었습니다.`
       },
     }),
 
