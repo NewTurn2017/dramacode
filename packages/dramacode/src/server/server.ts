@@ -8,7 +8,7 @@ import { Updater } from "../update"
 import { lazy } from "../util/lazy"
 import { SessionRoutes } from "./routes/session"
 import { ChatRoutes } from "./routes/chat"
-import { DramaRoutes, EpisodeRoutes, SceneRoutes } from "./routes/drama"
+import { DramaRoutes, EpisodeRoutes, SceneRoutes, CharacterImageRoutes, UploadsRoutes } from "./routes/drama"
 import { WriterRoutes } from "./routes/writer"
 import { EventRoutes } from "./routes/events"
 import { NotFoundError } from "../storage/db"
@@ -59,6 +59,8 @@ export namespace Server {
         .route("/drama", DramaRoutes())
         .route("/episode", EpisodeRoutes())
         .route("/scene", SceneRoutes())
+        .route("/character", CharacterImageRoutes())
+        .route("/uploads", UploadsRoutes())
         .route("/writer", WriterRoutes())
         .route("/events", EventRoutes())
         .put("/auth/:providerID", async (c) => {

@@ -50,6 +50,7 @@ export type Character = {
   personality: string | null
   backstory: string | null
   arc: string | null
+  image: string | null
   relationships: { character_id: string; type: string; description: string }[] | null
   time_created: number
   time_updated: number
@@ -194,6 +195,10 @@ export type UpdateStatus = {
   size: number
 }
 
+export function characterImageUrl(filename: string): string {
+  return `${BASE}/uploads/characters/${filename}`
+}
+
 export const api = {
   auth: {
     status: () => get<{ providers: string[] }>("/auth"),
@@ -213,6 +218,20 @@ export const api = {
     update: (id: string, body: Partial<Drama>) => patch<Drama>(`/drama/${id}`, body),
     remove: (id: string) => del(`/drama/${id}`),
     characters: (id: string) => get<Character[]>(`/drama/${id}/characters`),
+    uploadCharacterImage: async (characterId: string, file: File): Promise<Character> => {
+      const form = new FormData()
+      form.append("file", file)
+      const res = await fetch(`${BASE}/character/${characterId}/image`, {
+        method: "POST",
+        body: form,
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error ?? res.statusText)
+      }
+      return res.json()
+    },
+    removeCharacterImage: (characterId: string) => del(`/character/${characterId}/image`),
     episodes: (id: string) => get<Episode[]>(`/drama/${id}/episodes`),
     scenes: (id: string) => get<Scene[]>(`/drama/${id}/scenes`),
     world: (id: string) => get<World[]>(`/drama/${id}/world`),

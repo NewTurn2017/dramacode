@@ -62,6 +62,7 @@ export const CharacterTable = sqliteTable(
     personality: text(),
     backstory: text(),
     arc: text(),
+    image: text(), // relative filename e.g. "{id}.png" stored in data/images/characters/
     relationships: text({ mode: "json" }).$type<{ character_id: string; type: string; description: string }[]>(),
     ...Timestamps,
   },

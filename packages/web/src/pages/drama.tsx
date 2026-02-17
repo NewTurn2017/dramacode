@@ -1,6 +1,6 @@
 import { createSignal, createResource, createEffect, createMemo, For, Show, Switch, Match, onCleanup } from "solid-js"
 import { useParams, A } from "@solidjs/router"
-import { api, type Session, type Scene, type ScenePrompt, type CharacterArc } from "@/lib/api"
+import { api, characterImageUrl, type Session, type Scene, type ScenePrompt, type CharacterArc, type Character } from "@/lib/api"
 import { ChatPanel } from "@/components/chat-panel"
 import { ConfirmModal } from "@/components/confirm-modal"
 import { ThinkingIndicator } from "@/components/thinking"
@@ -294,6 +294,50 @@ export default function DramaDetail() {
   const namedCharacters = createMemo(() => (characters() ?? []).filter((c) => !c.name.startsWith("(미정)")))
   const pendingCharacters = createMemo(() => (characters() ?? []).filter((c) => c.name.startsWith("(미정)")))
 
+  const [dragOver, setDragOver] = createSignal<string | null>(null)
+  const [uploading, setUploading] = createSignal<string | null>(null)
+
+  async function handleImageDrop(characterId: string, e: DragEvent) {
+    e.preventDefault()
+    setDragOver(null)
+
+    const file = e.dataTransfer?.files?.[0]
+    if (!file || !file.type.startsWith("image/")) return
+
+    setUploading(characterId)
+    try {
+      await api.drama.uploadCharacterImage(characterId, file)
+      refetchChars()
+    } catch {
+    } finally {
+      setUploading(null)
+    }
+  }
+
+  async function handleImageSelect(characterId: string) {
+    const input = document.createElement("input")
+    input.type = "file"
+    input.accept = "image/*"
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      setUploading(characterId)
+      try {
+        await api.drama.uploadCharacterImage(characterId, file)
+        refetchChars()
+      } catch {
+      } finally {
+        setUploading(null)
+      }
+    }
+    input.click()
+  }
+
+  async function handleImageRemove(characterId: string) {
+    await api.drama.removeCharacterImage(characterId)
+    refetchChars()
+  }
+
   function groupedScenes() {
     const all = scenes() ?? []
     const groups = new Map<string, { number: number; scenes: Scene[] }>()
@@ -403,24 +447,85 @@ export default function DramaDetail() {
                                 <For each={namedCharacters()}>
                                   {(c) => (
                                     <div class="p-3 bg-bg-card border border-border/60 rounded-lg hover:border-border transition-colors">
-                                      <div class="flex items-center gap-2">
-                                        <span class="font-medium text-sm">{c.name}</span>
-                                        <Show when={c.role}>
-                                          <span class={`text-[10px] px-1.5 py-0.5 rounded ${roleColor(c.role)}`}>
-                                            {roleLabel[c.role!] ?? c.role}
-                                          </span>
-                                        </Show>
-                                      </div>
-                                      <div class="mt-1.5 text-xs text-text-dim space-y-0.5">
-                                        <Show when={c.occupation}>
-                                          <p>{c.occupation}</p>
-                                        </Show>
-                                        <Show when={c.personality}>
-                                          <p class="truncate">성격: {c.personality}</p>
-                                        </Show>
-                                        <Show when={c.backstory}>
-                                          <p class="line-clamp-2 opacity-70">{c.backstory}</p>
-                                        </Show>
+                                      <div class="flex gap-3">
+                                        <div
+                                          class="w-14 h-14 shrink-0 rounded-lg overflow-hidden border transition-all cursor-pointer"
+                                          classList={{
+                                            "border-accent border-dashed bg-accent/10": dragOver() === c.id,
+                                            "border-border/60": dragOver() !== c.id,
+                                          }}
+                                          onDragOver={(e) => {
+                                            e.preventDefault()
+                                            setDragOver(c.id)
+                                          }}
+                                          onDragLeave={() => setDragOver(null)}
+                                          onDrop={(e) => handleImageDrop(c.id, e)}
+                                          onClick={() => handleImageSelect(c.id)}
+                                          title="클릭하거나 이미지를 드래그하세요"
+                                        >
+                                          <Show
+                                            when={c.image}
+                                            fallback={
+                                              <div class="w-full h-full flex items-center justify-center bg-bg-hover/50 text-text-dim">
+                                                <Show
+                                                  when={uploading() !== c.id}
+                                                  fallback={
+                                                    <span class="text-[10px] text-accent animate-pulse">···</span>
+                                                  }
+                                                >
+                                                  <svg
+                                                    viewBox="0 0 24 24"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    stroke-width="1.5"
+                                                    class="w-5 h-5 opacity-40"
+                                                  >
+                                                    <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+                                                  </svg>
+                                                </Show>
+                                              </div>
+                                            }
+                                          >
+                                            <div class="relative w-full h-full group">
+                                              <img
+                                                src={characterImageUrl(c.image!)}
+                                                alt={c.name}
+                                                class="w-full h-full object-cover"
+                                              />
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  handleImageRemove(c.id)
+                                                }}
+                                                class="absolute top-0 right-0 w-4 h-4 bg-danger/80 text-white text-[8px] rounded-bl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                                                title="사진 삭제"
+                                              >
+                                                ✕
+                                              </button>
+                                            </div>
+                                          </Show>
+                                        </div>
+                                        <div class="min-w-0 flex-1">
+                                          <div class="flex items-center gap-2">
+                                            <span class="font-medium text-sm">{c.name}</span>
+                                            <Show when={c.role}>
+                                              <span class={`text-[10px] px-1.5 py-0.5 rounded ${roleColor(c.role)}`}>
+                                                {roleLabel[c.role!] ?? c.role}
+                                              </span>
+                                            </Show>
+                                          </div>
+                                          <div class="mt-1.5 text-xs text-text-dim space-y-0.5">
+                                            <Show when={c.occupation}>
+                                              <p>{c.occupation}</p>
+                                            </Show>
+                                            <Show when={c.personality}>
+                                              <p class="truncate">성격: {c.personality}</p>
+                                            </Show>
+                                            <Show when={c.backstory}>
+                                              <p class="line-clamp-2 opacity-70">{c.backstory}</p>
+                                            </Show>
+                                          </div>
+                                        </div>
                                       </div>
                                     </div>
                                   )}

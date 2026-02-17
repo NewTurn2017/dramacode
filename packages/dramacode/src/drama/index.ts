@@ -277,6 +277,7 @@ export namespace Character {
     personality?: string
     backstory?: string
     arc?: string
+    image?: string
     relationships?: { character_id: string; type: string; description: string }[]
   }): Info {
     const id = ulid()

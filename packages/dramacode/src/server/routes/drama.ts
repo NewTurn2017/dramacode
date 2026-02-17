@@ -1,7 +1,14 @@
 import { Hono } from "hono"
+import path from "path"
+import fs from "fs/promises"
 import { Drama, Episode, Scene, Character, CharacterArc, World, PlotPoint } from "../../drama"
 import { AutosaveMetrics } from "../../chat/autosave-metrics"
 import { Chat } from "../../chat"
+import { Global } from "../../global"
+
+const IMAGES_DIR = path.join(Global.Path.data, "images", "characters")
+const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"])
+const MAX_SIZE = 10 * 1024 * 1024
 
 export function DramaRoutes() {
   return new Hono()
@@ -64,6 +71,65 @@ export function DramaRoutes() {
       const body = await c.req.json<Omit<Parameters<typeof PlotPoint.create>[0], "drama_id">>()
       return c.json(PlotPoint.create({ drama_id: c.req.param("id"), ...body }), 201)
     })
+}
+
+export function CharacterImageRoutes() {
+  return new Hono()
+    .post("/:id/image", async (c) => {
+      const id = c.req.param("id")
+      const character = Character.get(id)
+
+      const body = await c.req.parseBody()
+      const file = body["file"]
+      if (!(file instanceof File)) return c.json({ error: "file required" }, 400)
+      if (!ALLOWED_TYPES.has(file.type)) return c.json({ error: "unsupported image type" }, 400)
+      if (file.size > MAX_SIZE) return c.json({ error: "file too large (max 10MB)" }, 400)
+
+      const ext = file.name.split(".").pop() ?? "png"
+      const filename = `${id}.${ext}`
+
+      await fs.mkdir(IMAGES_DIR, { recursive: true })
+
+      if (character.image) {
+        const prev = path.join(IMAGES_DIR, character.image)
+        await fs.unlink(prev).catch(() => {})
+      }
+
+      const buf = await file.arrayBuffer()
+      await Bun.write(path.join(IMAGES_DIR, filename), buf)
+
+      const updated = Character.update(id, { image: filename })
+      return c.json(updated)
+    })
+    .delete("/:id/image", async (c) => {
+      const id = c.req.param("id")
+      const character = Character.get(id)
+
+      if (character.image) {
+        const filePath = path.join(IMAGES_DIR, character.image)
+        await fs.unlink(filePath).catch(() => {})
+        Character.update(id, { image: null })
+      }
+
+      return c.json(true)
+    })
+}
+
+export function UploadsRoutes() {
+  return new Hono().get("/characters/:filename", async (c) => {
+    const filename = c.req.param("filename")
+    if (filename.includes("..") || filename.includes("/")) return c.notFound()
+
+    const filePath = path.join(IMAGES_DIR, filename)
+    const file = Bun.file(filePath)
+    if (!(await file.exists())) return c.notFound()
+
+    return new Response(file, {
+      headers: {
+        "cache-control": "public, max-age=3600",
+      },
+    })
+  })
 }
 
 export function EpisodeRoutes() {
