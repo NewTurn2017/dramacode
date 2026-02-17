@@ -2,6 +2,8 @@ import { Hono } from "hono"
 import path from "path"
 import fs from "fs/promises"
 import { Drama, Episode, Scene, Character, CharacterArc, World, PlotPoint } from "../../drama"
+import { dramaToFountain } from "../../drama/fountain"
+import { dramaToScreenplayHtml } from "../../drama/screenplay-pdf"
 import { AutosaveMetrics } from "../../chat/autosave-metrics"
 import { Chat } from "../../chat"
 import { Global } from "../../global"
@@ -71,10 +73,42 @@ export function DramaRoutes() {
       const body = await c.req.json<Omit<Parameters<typeof PlotPoint.create>[0], "drama_id">>()
       return c.json(PlotPoint.create({ drama_id: c.req.param("id"), ...body }), 201)
     })
+    .get("/:id/export/fountain", (c) => {
+      const episodeParam = c.req.query("episode")
+      const episodeNumber = episodeParam ? Number(episodeParam) : undefined
+      const text = dramaToFountain(c.req.param("id"), episodeNumber)
+      const drama = Drama.get(c.req.param("id"))
+      const filename = episodeNumber
+        ? `${drama.title}_ep${episodeNumber}.fountain`
+        : `${drama.title}.fountain`
+      return new Response(text, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        },
+      })
+    })
+    .get("/:id/export/pdf", (c) => {
+      const episodeParam = c.req.query("episode")
+      const episodeNumber = episodeParam ? Number(episodeParam) : undefined
+      const html = dramaToScreenplayHtml(c.req.param("id"), episodeNumber)
+      return new Response(html, {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      })
+    })
 }
 
 export function CharacterImageRoutes() {
   return new Hono()
+    .get("/:id", (c) => c.json(Character.get(c.req.param("id"))))
+    .patch("/:id", async (c) => {
+      const body = await c.req.json()
+      return c.json(Character.update(c.req.param("id"), body))
+    })
+    .delete("/:id", (c) => {
+      Character.remove(c.req.param("id"))
+      return c.json(true)
+    })
     .post("/:id/image", async (c) => {
       const id = c.req.param("id")
       const character = Character.get(id)
@@ -115,6 +149,36 @@ export function CharacterImageRoutes() {
     })
 }
 
+export function WorldRoutes() {
+  return new Hono()
+    .get("/:id", (c) => c.json(World.get(c.req.param("id"))))
+    .patch("/:id", async (c) => {
+      const body = await c.req.json()
+      return c.json(World.update(c.req.param("id"), body))
+    })
+    .delete("/:id", (c) => {
+      World.remove(c.req.param("id"))
+      return c.json(true)
+    })
+}
+
+export function PlotPointRoutes() {
+  return new Hono()
+    .get("/:id", (c) => c.json(PlotPoint.get(c.req.param("id"))))
+    .patch("/:id", async (c) => {
+      const body = await c.req.json()
+      return c.json(PlotPoint.update(c.req.param("id"), body))
+    })
+    .delete("/:id", (c) => {
+      PlotPoint.remove(c.req.param("id"))
+      return c.json(true)
+    })
+    .post("/:id/resolve", async (c) => {
+      const body = await c.req.json<{ resolved_episode_id?: string }>().catch(() => ({} as { resolved_episode_id?: string }))
+      return c.json(PlotPoint.resolve(c.req.param("id"), body.resolved_episode_id))
+    })
+}
+
 export function UploadsRoutes() {
   return new Hono().get("/characters/:filename", async (c) => {
     const filename = c.req.param("filename")
@@ -143,6 +207,26 @@ export function EpisodeRoutes() {
       Episode.remove(c.req.param("id"))
       return c.json(true)
     })
+    .patch("/:id/reorder", async (c) => {
+      const { number } = await c.req.json<{ number: number }>()
+      const episode = Episode.get(c.req.param("id"))
+      const episodes = Episode.listByDrama(episode.drama_id)
+      const oldNumber = episode.number
+      if (number === oldNumber) return c.json(episode)
+      for (const ep of episodes) {
+        if (ep.id === episode.id) continue
+        if (oldNumber < number) {
+          if (ep.number > oldNumber && ep.number <= number) {
+            Episode.update(ep.id, { number: ep.number - 1 })
+          }
+        } else {
+          if (ep.number >= number && ep.number < oldNumber) {
+            Episode.update(ep.id, { number: ep.number + 1 })
+          }
+        }
+      }
+      return c.json(Episode.update(c.req.param("id"), { number }))
+    })
     .get("/:id/scenes", (c) => c.json(Scene.listByEpisode(c.req.param("id"))))
     .post("/:id/scenes", async (c) => {
       const body = await c.req.json<Omit<Parameters<typeof Scene.create>[0], "episode_id">>()
@@ -160,6 +244,26 @@ export function SceneRoutes() {
     .delete("/:id", (c) => {
       Scene.remove(c.req.param("id"))
       return c.json(true)
+    })
+    .patch("/:id/reorder", async (c) => {
+      const { number } = await c.req.json<{ number: number }>()
+      const scene = Scene.get(c.req.param("id"))
+      const scenes = Scene.listByEpisode(scene.episode_id)
+      const oldNumber = scene.number
+      if (number === oldNumber) return c.json(scene)
+      for (const sc of scenes) {
+        if (sc.id === scene.id) continue
+        if (oldNumber < number) {
+          if (sc.number > oldNumber && sc.number <= number) {
+            Scene.update(sc.id, { number: sc.number - 1 })
+          }
+        } else {
+          if (sc.number >= number && sc.number < oldNumber) {
+            Scene.update(sc.id, { number: sc.number + 1 })
+          }
+        }
+      }
+      return c.json(Scene.update(c.req.param("id"), { number }))
     })
     .get("/:id/characters", (c) => c.json(Scene.characters(c.req.param("id"))))
     .put("/:id/characters/:characterID", (c) => {

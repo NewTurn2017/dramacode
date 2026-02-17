@@ -241,6 +241,45 @@ export const api = {
     arcs: (id: string) => get<CharacterArc[]>(`/drama/${id}/arcs`),
     plotPoints: (id: string) => get<PlotPoint[]>(`/drama/${id}/plot-points`),
   },
+  episode: {
+    get: (id: string) => get<Episode>(`/episode/${id}`),
+    update: (id: string, body: Partial<Pick<Episode, "title" | "synopsis" | "status">>) =>
+      patch<Episode>(`/episode/${id}`, body),
+    remove: (id: string) => del(`/episode/${id}`),
+    reorder: (id: string, number: number) =>
+      patch<Episode>(`/episode/${id}/reorder`, { number }),
+    scenes: (id: string) => get<Scene[]>(`/episode/${id}/scenes`),
+    createScene: (id: string, body: Partial<Scene>) =>
+      post<Scene>(`/episode/${id}/scenes`, body),
+  },
+  scene: {
+    get: (id: string) => get<Scene>(`/scene/${id}`),
+    update: (id: string, body: Partial<Pick<Scene, "location" | "time_of_day" | "description" | "dialogue" | "notes">>) =>
+      patch<Scene>(`/scene/${id}`, body),
+    remove: (id: string) => del(`/scene/${id}`),
+    reorder: (id: string, number: number) =>
+      patch<Scene>(`/scene/${id}/reorder`, { number }),
+  },
+  character: {
+    get: (id: string) => get<Character>(`/character/${id}`),
+    update: (id: string, body: Partial<Pick<Character, "name" | "role" | "age" | "occupation" | "personality" | "backstory" | "arc">>) =>
+      patch<Character>(`/character/${id}`, body),
+    remove: (id: string) => del(`/character/${id}`),
+  },
+  world: {
+    get: (id: string) => get<World>(`/world/${id}`),
+    update: (id: string, body: Partial<Pick<World, "category" | "name" | "description">>) =>
+      patch<World>(`/world/${id}`, body),
+    remove: (id: string) => del(`/world/${id}`),
+  },
+  plotPoint: {
+    get: (id: string) => get<PlotPoint>(`/plot-point/${id}`),
+    update: (id: string, body: Partial<Pick<PlotPoint, "type" | "description" | "resolved" | "episode_id">>) =>
+      patch<PlotPoint>(`/plot-point/${id}`, body),
+    remove: (id: string) => del(`/plot-point/${id}`),
+    resolve: (id: string, resolvedEpisodeId?: string) =>
+      post<PlotPoint>(`/plot-point/${id}/resolve`, { resolved_episode_id: resolvedEpisodeId }),
+  },
   session: {
     list: (dramaId?: string) => get<Session[]>(dramaId ? `/session?drama_id=${dramaId}` : "/session"),
     get: (id: string) => get<Session>(`/session/${id}`),

@@ -3,6 +3,8 @@ import { A, useLocation } from "@solidjs/router"
 import { routes } from "./routes"
 import { api, type UpdateStatus } from "./lib/api"
 import { AuthGuideModal } from "./components/auth-guide-modal"
+import { ToastProvider } from "./components/toast-provider"
+import { CommandPalette } from "./components/command-palette"
 
 function AuthSection() {
   const [authData, { refetch }] = createResource(() => api.auth.status())
@@ -208,6 +210,8 @@ export default function App(props: ParentProps) {
         <AuthSection />
       </nav>
       <main class="flex-1 min-w-0 overflow-auto">{props.children}</main>
+      <ToastProvider />
+      <CommandPalette />
     </div>
   )
 }
