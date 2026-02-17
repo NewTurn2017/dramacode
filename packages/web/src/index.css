@@ -166,7 +166,7 @@ body {
 
 .prose strong {
   font-weight: 600;
-  color: #fff;
+  color: var(--color-accent);
 }
 
 .prose em {

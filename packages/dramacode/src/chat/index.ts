@@ -475,7 +475,7 @@ export namespace Chat {
       model: openai(model),
       messages: toModel(history),
       tools,
-      stopWhen: stepCountIs(5),
+      stopWhen: stepCountIs(12),
       providerOptions: { openai: { instructions: system, store: false } },
     })
 
@@ -556,14 +556,20 @@ export namespace Chat {
       model: openai(model),
       messages: toModel(history),
       tools,
-      stopWhen: stepCountIs(5),
+      stopWhen: stepCountIs(12),
       providerOptions: { openai: { instructions: system, store: false } },
-      async onFinish({ text }) {
+      async onFinish({ text, steps }) {
         if (text.trim()) {
           Session.addMessage({
             session_id: input.session_id,
             role: "assistant",
             content: text,
+          })
+        } else if (steps.some((s) => s.toolCalls.length > 0)) {
+          log.warn("chat.stream.no_text_after_tools", {
+            session_id: input.session_id,
+            steps: steps.length,
+            tool_calls: steps.reduce((n, s) => n + s.toolCalls.length, 0),
           })
         }
       },
