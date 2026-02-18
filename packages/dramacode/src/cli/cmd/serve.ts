@@ -1,9 +1,25 @@
 import type { CommandModule } from "yargs"
 import path from "path"
 import { existsSync } from "fs"
-import open from "open"
+import { exec } from "child_process"
 import { Server } from "../../server/server"
 import { Updater } from "../../update"
+
+function openBrowser(url: string) {
+  if (process.platform === "darwin") {
+    exec(`/usr/bin/open "${url}"`, (err) => {
+      if (err) console.error(`Failed to open browser: ${err.message}`)
+    })
+  } else if (process.platform === "win32") {
+    exec(`start "" "${url}"`, (err) => {
+      if (err) console.error(`Failed to open browser: ${err.message}`)
+    })
+  } else {
+    exec(`xdg-open "${url}"`, (err) => {
+      if (err) console.error(`Failed to open browser: ${err.message}`)
+    })
+  }
+}
 
 function resolveStaticDir(explicit?: string): string | undefined {
   if (explicit) return explicit
@@ -55,7 +71,7 @@ export const ServeCommand: CommandModule = {
     console.log(`Server listening on ${server.url}`)
     if (staticDir) console.log(`Serving web UI from ${path.resolve(staticDir)}`)
     if (argv.open) {
-      await open(server.url.href).catch(() => {})
+      openBrowser(server.url.href)
     }
 
     Updater.cleanupOldBinary()

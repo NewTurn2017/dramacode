@@ -1,6 +1,22 @@
-import open from "open"
+import { exec } from "child_process"
 import { Auth, OAUTH_DUMMY_KEY } from "../auth"
 import { Log } from "../util/log"
+
+function openBrowser(url: string) {
+  if (process.platform === "darwin") {
+    exec(`/usr/bin/open "${url}"`, (err) => {
+      if (err) log.error("failed to open browser", { error: err.message })
+    })
+  } else if (process.platform === "win32") {
+    exec(`start "" "${url}"`, (err) => {
+      if (err) log.error("failed to open browser", { error: err.message })
+    })
+  } else {
+    exec(`xdg-open "${url}"`, (err) => {
+      if (err) log.error("failed to open browser", { error: err.message })
+    })
+  }
+}
 
 const log = Log.create({ service: "plugin.openai" })
 
@@ -368,7 +384,7 @@ export namespace OpenAIAuth {
     const done = waitForCallback(pkce, state)
 
     console.log(`OpenAI authorization URL: ${url}`)
-    await open(url).catch(() => undefined)
+    openBrowser(url)
 
     try {
       const token = await done
@@ -447,7 +463,7 @@ export namespace OpenAIAuth {
     const url = `${ISSUER}/codex/device`
     console.log(`\n  1. Open: ${url}`)
     console.log(`  2. Enter code: ${info.user_code}\n`)
-    await open(url).catch(() => undefined)
+    openBrowser(url)
     console.log("  Waiting for authorization...")
 
     while (true) {
