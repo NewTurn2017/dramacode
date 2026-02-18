@@ -29,13 +29,13 @@ export function CommandPalette() {
       const key = e.key.toLowerCase()
       const hasModifier = e.metaKey || e.ctrlKey
 
+      if (isTextInputElement(e.target)) return
+
       if (hasModifier && key === "k") {
         e.preventDefault()
         setOpen((prev) => !prev)
         return
       }
-
-      if (isTextInputElement(e.target)) return
 
       if (key === "escape" && open()) {
         e.preventDefault()
@@ -125,6 +125,15 @@ export function CommandPalette() {
                 >
                   <span>프로젝트 데이터 패널 토글</span>
                   {shortcutHint("⌘B")}
+                </Command.Item>
+                <Command.Item
+                  value="세션 목록 패널 토글"
+                  disabled={!isDramaPage()}
+                  onSelect={() => run(() => dispatch("dramacode:toggle-sessions"))}
+                  class="px-4 py-2.5 text-sm text-text cursor-pointer rounded-md flex items-center justify-between [&[data-selected]]:bg-accent/10 [&[data-selected]]:text-accent [&[data-disabled]]:opacity-40 [&[data-disabled]]:cursor-not-allowed"
+                >
+                  <span>세션 목록 패널 토글</span>
+                  {shortcutHint("⌘\\")}
                 </Command.Item>
                 <Command.Item
                   value="각본 내보내기"
