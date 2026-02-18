@@ -19,6 +19,7 @@
         "@ai-sdk/openai": "^3.0.29",
         "@hono/zod-validator": "0.4.2",
         "ai": "^6.0.90",
+        "cloudflared": "^0.7.1",
         "drizzle-orm": "1.0.0-beta.12-a5629fb",
         "hono": "4.10.7",
         "sqlite-vec": "^0.1.7-alpha.2",
@@ -412,6 +413,8 @@
     "caniuse-lite": ["caniuse-lite@1.0.30001770", "", {}, "sha512-x/2CLQ1jHENRbHg5PSId2sXq1CIO1CISvwWAj027ltMVG2UNgW+w9oH2+HzgEIRFembL8bUlXtfbBHR1fCg2xw=="],
 
     "cliui": ["cliui@9.0.1", "", { "dependencies": { "string-width": "^7.2.0", "strip-ansi": "^7.1.0", "wrap-ansi": "^9.0.0" } }, "sha512-k7ndgKhwoQveBL+/1tqGJYNz097I7WOvwbmmU2AR5+magtbjPWQTS1C5vzGkBC8Ym8UWRzfKUzUUqFLypY4Q+w=="],
+
+    "cloudflared": ["cloudflared@0.7.1", "", { "bin": { "cloudflared": "lib/cloudflared.js" } }, "sha512-jJn1Gu9Tf4qnIu8tfiHZ25Hs8rNcRYSVf8zAd97wvYdOCzftm1CTs1S/RPhijjGi8gUT1p9yzfDi9zYlU/0RwA=="],
 
     "cmdk-solid": ["cmdk-solid@1.1.2", "", { "dependencies": { "@kobalte/core": "^0.12.4", "@kobalte/utils": "^0.9.0", "@solid-primitives/deep": "^0.2.7", "@solid-primitives/mutation-observer": "^1.1.17" }, "peerDependencies": { "solid-js": "^1.8.0" } }, "sha512-E0g6bwr2Z92Ib1K2WHwGsq6xsrkVVSN1oe5YTg8LCV3iIwtyZORwmR+8n0xrecqycdhgAar8vWUjtB1OJt9tiA=="],
 

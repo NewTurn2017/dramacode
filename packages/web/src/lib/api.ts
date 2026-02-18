@@ -233,6 +233,12 @@ export type UpdateProgress = {
   error: string | null
 }
 
+export type TunnelStatus = {
+  state: "idle" | "installing" | "connecting" | "connected" | "error"
+  url: string | null
+  error: string | null
+}
+
 export function characterImageUrl(filename: string): string {
   return `${BASE}/uploads/characters/${filename}`
 }
@@ -280,6 +286,11 @@ export const api = {
       }
       return res.json() as Promise<{ ok: boolean; message: string }>
     },
+  },
+  tunnel: {
+    start: () => post<TunnelStatus>("/tunnel/start", { port: Number(window.location.port) || 4097 }),
+    stop: () => post<TunnelStatus>("/tunnel/stop", {}),
+    status: () => get<TunnelStatus>("/tunnel/status"),
   },
   shutdown: () => post<{ ok: boolean }>("/shutdown", {}),
   aliveUrl: `${BASE}/alive`,

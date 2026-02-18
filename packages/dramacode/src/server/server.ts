@@ -16,6 +16,7 @@ import { EventRoutes } from "./routes/events"
 import { DataRoutes } from "./routes/data"
 import { NotFoundError, Database } from "../storage/db"
 import { cleanupDuplicates } from "../chat/structured"
+import { startTunnel, stopTunnel, tunnelStatus } from "../tunnel/tunnel"
 
 const log = Log.create({ service: "server" })
 
@@ -61,6 +62,7 @@ export namespace Server {
               if (!input) return
               if (input.startsWith("http://localhost:")) return input
               if (input.startsWith("http://127.0.0.1:")) return input
+              if (input.endsWith(".trycloudflare.com")) return input
               return
             },
           }),
@@ -233,8 +235,22 @@ export namespace Server {
             return c.json({ error: err instanceof Error ? err.message : String(err) }, 500)
           }
         })
+        .post("/tunnel/start", async (c) => {
+          const body = await c.req.json<{ port?: number }>().catch(() => ({}))
+          const port = body.port && body.port > 0 ? body.port : (_url?.port ? Number(_url.port) : 4097)
+          const status = await startTunnel(port)
+          if (status.state === "error") return c.json(status, 500)
+          return c.json(status)
+        })
+        .post("/tunnel/stop", (c) => {
+          return c.json(stopTunnel())
+        })
+        .get("/tunnel/status", (c) => {
+          return c.json(tunnelStatus())
+        })
         .post("/shutdown", (c) => {
           log.info("shutdown requested via API")
+          stopTunnel()
           setTimeout(() => process.exit(0), 500)
           return c.json({ ok: true })
         }) as unknown as Hono,

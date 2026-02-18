@@ -4,6 +4,7 @@ import { existsSync } from "fs"
 import { exec } from "child_process"
 import { Server } from "../../server/server"
 import { Updater } from "../../update"
+import { startTunnel } from "../../tunnel/tunnel"
 
 function openBrowser(url: string) {
   if (process.platform === "darwin") {
@@ -60,6 +61,11 @@ export const ServeCommand: CommandModule = {
         type: "boolean",
         default: false,
       })
+      .option("tunnel", {
+        describe: "expose server via Cloudflare Quick Tunnel (free public HTTPS URL)",
+        type: "boolean",
+        default: false,
+      })
   },
   handler: async (argv) => {
     const staticDir = resolveStaticDir(argv.static as string | undefined)
@@ -70,7 +76,17 @@ export const ServeCommand: CommandModule = {
     })
     console.log(`Server listening on ${server.url}`)
     if (staticDir) console.log(`Serving web UI from ${path.resolve(staticDir)}`)
-    if (argv.open) {
+    if (argv.tunnel) {
+      const status = await startTunnel(server.url.port ? Number(server.url.port) : 4097)
+      if (status.state === "connected" && status.url) {
+        console.log(`\n  🌐 Public URL: ${status.url}\n`)
+        if (argv.open) {
+          openBrowser(status.url)
+        }
+      } else if (status.state === "error") {
+        console.error(`Tunnel failed: ${status.error}`)
+      }
+    } else if (argv.open) {
       openBrowser(server.url.href)
     }
 

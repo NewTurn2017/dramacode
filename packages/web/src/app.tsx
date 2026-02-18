@@ -4,6 +4,7 @@ import { routes } from "./routes"
 import { api } from "./lib/api"
 import { AuthStatusDots } from "./components/auth-status"
 import { SettingsDropdown } from "./components/settings-dropdown"
+import { TunnelButton } from "./components/tunnel-button"
 import { ToastProvider } from "./components/toast-provider"
 import { CommandPalette } from "./components/command-palette"
 
@@ -56,6 +57,7 @@ export default function App(props: ParentProps) {
             <div class="hidden sm:block">
               <AuthStatusDots />
             </div>
+            <TunnelButton />
             <SettingsDropdown />
           </div>
         </header>

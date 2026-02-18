@@ -12,6 +12,7 @@ export default defineConfig({
   },
   server: {
     port: 4098,
+    allowedHosts: [".trycloudflare.com"],
     proxy: {
       "/api/events": {
         target: "http://localhost:4097",
