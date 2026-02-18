@@ -10,7 +10,7 @@ import { Log } from "../util/log"
 import { NamedError } from "../util/error"
 import z from "zod"
 import path from "path"
-import { readFileSync, readdirSync } from "fs"
+import { existsSync, readFileSync, readdirSync } from "fs"
 import * as schema from "./schema"
 import { Rag } from "../rag"
 
@@ -74,6 +74,7 @@ export namespace Database {
           ? ["/usr/lib/x86_64-linux-gnu/libsqlite3.so.0", "/usr/lib/libsqlite3.so"]
           : []
     for (const file of candidates) {
+      if (!existsSync(file)) continue
       try {
         BunDatabase.setCustomSQLite(file)
         log.info("custom sqlite loaded", { file })
