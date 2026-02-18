@@ -195,6 +195,12 @@ export type UpdateStatus = {
   size: number
 }
 
+export type UpdateProgress = {
+  step: "idle" | "downloading" | "downloaded" | "applying" | "restarting" | "error"
+  percent: number
+  error: string | null
+}
+
 export function characterImageUrl(filename: string): string {
   return `${BASE}/uploads/characters/${filename}`
 }
@@ -217,7 +223,9 @@ export const api = {
   },
   update: {
     check: () => get<UpdateStatus>("/update/check"),
-    apply: () => post<{ ok: boolean; message: string }>("/update/apply", {}),
+    start: () => post<{ ok: boolean }>("/update/start", {}),
+    progress: () => get<UpdateProgress>("/update/progress"),
+    apply: () => post<{ ok: boolean }>("/update/apply", {}),
   },
   drama: {
     list: () => get<Drama[]>("/drama"),

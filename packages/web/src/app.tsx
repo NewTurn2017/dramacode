@@ -1,7 +1,7 @@
-import { type ParentProps, createSignal, createResource, Show, onMount } from "solid-js"
+import { type ParentProps, createSignal, createResource, Show, onMount, onCleanup } from "solid-js"
 import { A, useLocation } from "@solidjs/router"
 import { routes } from "./routes"
-import { api, type UpdateStatus } from "./lib/api"
+import { api, type UpdateStatus, type UpdateProgress } from "./lib/api"
 import { AuthGuideModal } from "./components/auth-guide-modal"
 import { ToastProvider } from "./components/toast-provider"
 import { CommandPalette } from "./components/command-palette"
@@ -305,39 +305,123 @@ function AuthSection() {
   )
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
+}
+
 function VersionBadge() {
   const [update, setUpdate] = createSignal<UpdateStatus | null>(null)
-  const [updating, setUpdating] = createSignal(false)
+  const [progress, setProgress] = createSignal<UpdateProgress | null>(null)
+  const [countdown, setCountdown] = createSignal(0)
+  let pollTimer: ReturnType<typeof setInterval> | undefined
+  let countdownTimer: ReturnType<typeof setInterval> | undefined
+
+  onCleanup(() => {
+    clearInterval(pollTimer)
+    clearInterval(countdownTimer)
+  })
 
   onMount(async () => {
     try {
-      const status = await api.update.check()
-      setUpdate(status)
+      setUpdate(await api.update.check())
     } catch {}
   })
 
-  async function handleUpdate() {
-    setUpdating(true)
+  function startPolling() {
+    pollTimer = setInterval(async () => {
+      try {
+        const p = await api.update.progress()
+        setProgress(p)
+        if (p.step === "downloaded") {
+          clearInterval(pollTimer)
+          setProgress({ step: "applying", percent: 100, error: null })
+          try {
+            await api.update.apply()
+            setProgress({ step: "restarting", percent: 100, error: null })
+            setCountdown(3)
+            countdownTimer = setInterval(() => {
+              setCountdown((c) => {
+                if (c <= 1) {
+                  clearInterval(countdownTimer)
+                  return 0
+                }
+                return c - 1
+              })
+            }, 1000)
+          } catch (err) {
+            setProgress({ step: "error", percent: 0, error: err instanceof Error ? err.message : "적용 실패" })
+          }
+        }
+        if (p.step === "error") clearInterval(pollTimer)
+      } catch {}
+    }, 500)
+  }
+
+  async function handleStart() {
+    setProgress({ step: "downloading", percent: 0, error: null })
     try {
-      await api.update.apply()
-    } catch {
-      setUpdating(false)
+      await api.update.start()
+      startPolling()
+    } catch (err) {
+      setProgress({ step: "error", percent: 0, error: err instanceof Error ? err.message : "시작 실패" })
     }
   }
 
+  function handleRetry() {
+    setProgress(null)
+    setCountdown(0)
+    clearInterval(pollTimer)
+    clearInterval(countdownTimer)
+  }
+
+  const p = () => progress()
+  const isActive = () => p() && p()!.step !== "idle"
+
   return (
     <div class="text-center space-y-1">
-      <Show
-        when={update()?.hasUpdate}
-        fallback={<p class="text-[10px] text-text-dim">v{update()?.version ?? "0.1.0"}</p>}
-      >
-        <button
-          onClick={handleUpdate}
-          disabled={updating()}
-          class="w-full px-2 py-1 text-[10px] font-medium rounded-md bg-success/15 text-success hover:bg-success/25 transition-colors disabled:opacity-50"
+      <Show when={isActive()}>
+        <div class="space-y-1.5">
+          <Show when={p()!.step === "downloading"}>
+            <div class="w-full h-1.5 bg-border rounded-full overflow-hidden">
+              <div
+                class="h-full bg-accent rounded-full transition-all duration-300"
+                style={{ width: `${p()!.percent}%` }}
+              />
+            </div>
+            <p class="text-[10px] text-text-dim">다운로드 중… {p()!.percent}%</p>
+          </Show>
+          <Show when={p()!.step === "applying"}>
+            <p class="text-[10px] text-accent animate-pulse">적용 중…</p>
+          </Show>
+          <Show when={p()!.step === "restarting"}>
+            <p class="text-[10px] text-success font-medium">
+              {countdown() > 0 ? `${countdown()}초 후 재시작…` : "재시작 중…"}
+            </p>
+          </Show>
+          <Show when={p()!.step === "error"}>
+            <p class="text-[10px] text-danger">{p()!.error}</p>
+            <button
+              onClick={handleRetry}
+              class="w-full px-2 py-1 text-[10px] font-medium rounded-md border border-danger/30 text-danger hover:bg-danger/10 transition-colors"
+            >
+              다시 시도
+            </button>
+          </Show>
+        </div>
+      </Show>
+      <Show when={!isActive()}>
+        <Show
+          when={update()?.hasUpdate}
+          fallback={<p class="text-[10px] text-text-dim">v{update()?.version ?? "0.1.0"}</p>}
         >
-          {updating() ? "업데이트 중..." : `v${update()!.latest} 업데이트 가능`}
-        </button>
+          <button
+            onClick={handleStart}
+            class="w-full px-2 py-1 text-[10px] font-medium rounded-md bg-success/15 text-success hover:bg-success/25 transition-colors"
+          >
+            v{update()!.latest} 업데이트 ({formatBytes(update()!.size)})
+          </button>
+        </Show>
       </Show>
     </div>
   )

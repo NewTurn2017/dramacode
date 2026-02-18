@@ -20,6 +20,7 @@ const log = Log.create({ service: "server" })
 let _url: URL | undefined
 let _version = "0.1.0"
 let _cachedUpdate: Awaited<ReturnType<typeof Updater.check>> = null
+let _updateState: { step: "idle" | "downloading" | "downloaded" | "applying" | "restarting" | "error"; percent: number; error?: string; zipPath?: string } = { step: "idle", percent: 0 }
 
 export namespace Server {
   export function url(): URL {
@@ -141,17 +142,39 @@ export namespace Server {
             size: info?.size ?? 0,
           })
         })
+        .post("/update/start", async (c) => {
+          if (!_cachedUpdate?.hasUpdate) return c.json({ error: "No update available" }, 400)
+          if (_updateState.step === "downloading") return c.json({ error: "Already downloading" }, 409)
+          _updateState = { step: "downloading", percent: 0 }
+          Updater.download(_cachedUpdate, (pct) => {
+            _updateState = { step: "downloading", percent: pct }
+          })
+            .then((zipPath) => {
+              _updateState = { step: "downloaded", percent: 100, zipPath }
+            })
+            .catch((err) => {
+              log.error("update download failed", { error: String(err) })
+              _updateState = { step: "error", percent: 0, error: String(err) }
+            })
+          return c.json({ ok: true })
+        })
+        .get("/update/progress", (c) => {
+          return c.json({ step: _updateState.step, percent: _updateState.percent, error: _updateState.error ?? null })
+        })
         .post("/update/apply", async (c) => {
-          if (!_cachedUpdate?.hasUpdate) {
-            return c.json({ error: "No update available" }, 400)
+          if (_updateState.step !== "downloaded" || !_updateState.zipPath) {
+            return c.json({ error: "No downloaded update to apply" }, 400)
           }
           try {
-            const zipPath = await Updater.download(_cachedUpdate)
+            const zipPath = _updateState.zipPath
+            _updateState = { step: "applying", percent: 100 }
             await Updater.apply(zipPath)
-            setTimeout(() => Updater.restart(), 500)
-            return c.json({ ok: true, message: "Update applied, restarting..." })
+            _updateState = { step: "restarting", percent: 100 }
+            setTimeout(() => Updater.restart(), 2000)
+            return c.json({ ok: true })
           } catch (err) {
             log.error("update apply failed", { error: String(err) })
+            _updateState = { step: "error", percent: 0, error: String(err) }
             return c.json({ error: String(err) }, 500)
           }
         }) as unknown as Hono,
