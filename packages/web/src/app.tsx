@@ -427,6 +427,10 @@ function VersionBadge() {
   const [progress, setProgress] = createSignal<UpdateProgress | null>(null)
   const [showChangelog, setShowChangelog] = createSignal(false)
   const [countdown, setCountdown] = createSignal(0)
+  const [migrating, setMigrating] = createSignal(false)
+  const [exporting, setExporting] = createSignal(false)
+  const [importing, setImporting] = createSignal(false)
+  let fileInputRef: HTMLInputElement | undefined
   let pollTimer: ReturnType<typeof setInterval> | undefined
   let countdownTimer: ReturnType<typeof setInterval> | undefined
 
@@ -440,6 +444,48 @@ function VersionBadge() {
       setUpdate(await api.update.check())
     } catch {}
   })
+
+  async function handleMigrate() {
+    if (migrating()) return
+    setMigrating(true)
+    try {
+      await api.migrate()
+      showToast.success("DB 업데이트가 적용되었습니다")
+    } catch (err) {
+      showToast.error(err instanceof Error ? err.message : "DB 업데이트 적용 실패")
+    } finally {
+      setMigrating(false)
+    }
+  }
+
+  async function handleExport() {
+    if (exporting()) return
+    setExporting(true)
+    try {
+      const a = document.createElement("a")
+      a.href = api.data.exportUrl
+      a.download = `dramacode-backup-${new Date().toISOString().slice(0, 10)}.zip`
+      a.click()
+      showToast.success("백업 파일 다운로드를 시작합니다")
+    } catch (err) {
+      showToast.error(err instanceof Error ? err.message : "내보내기 실패")
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  async function handleImport(file: File) {
+    if (importing()) return
+    setImporting(true)
+    try {
+      const result = await api.data.import(file)
+      showToast.success(result.message)
+    } catch (err) {
+      showToast.error(err instanceof Error ? err.message : "불러오기 실패")
+    } finally {
+      setImporting(false)
+    }
+  }
 
   function startPolling() {
     pollTimer = setInterval(async () => {
@@ -535,6 +581,14 @@ function VersionBadge() {
               >
                 변경내역
               </button>
+              <span class="mx-0.5">·</span>
+              <button
+                onClick={handleMigrate}
+                disabled={migrating()}
+                class="text-accent/70 hover:text-accent underline underline-offset-2 transition-colors disabled:opacity-50"
+              >
+                {migrating() ? "적용 중…" : "DB 업데이트 적용"}
+              </button>
             </p>
           }
         >
@@ -546,6 +600,34 @@ function VersionBadge() {
           </button>
         </Show>
       </Show>
+      <div class="flex justify-center gap-2 text-[10px]">
+        <button
+          onClick={handleExport}
+          disabled={exporting()}
+          class="text-text-dim hover:text-accent transition-colors disabled:opacity-50"
+        >
+          {exporting() ? "준비 중…" : "데이터 내보내기"}
+        </button>
+        <span class="text-text-dim/40">|</span>
+        <button
+          onClick={() => fileInputRef?.click()}
+          disabled={importing()}
+          class="text-text-dim hover:text-accent transition-colors disabled:opacity-50"
+        >
+          {importing() ? "불러오는 중…" : "데이터 불러오기"}
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".zip"
+          class="hidden"
+          onChange={(e) => {
+            const file = e.currentTarget.files?.[0]
+            if (file) handleImport(file)
+            e.currentTarget.value = ""
+          }}
+        />
+      </div>
       <ChangelogModal open={showChangelog()} onClose={() => setShowChangelog(false)} />
     </div>
   )

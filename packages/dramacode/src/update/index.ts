@@ -112,7 +112,7 @@ export namespace Updater {
     const execDir = path.dirname(execPath)
     const tmpExtract = path.join(os.tmpdir(), "dramacode-update-extract")
 
-    const { rmSync, mkdirSync, readdirSync, cpSync } = await import("fs")
+    const { rmSync, mkdirSync, readdirSync, cpSync, statSync } = await import("fs")
     rmSync(tmpExtract, { recursive: true, force: true })
     mkdirSync(tmpExtract, { recursive: true })
 
@@ -149,6 +149,14 @@ export namespace Updater {
 
       if (file === binaryName && !isWindows) {
         if (existsSync(dest)) unlinkSync(dest)
+      }
+
+      if (existsSync(dest)) {
+        try {
+          if (statSync(dest).isDirectory()) {
+            rmSync(dest, { recursive: true, force: true })
+          }
+        } catch {}
       }
 
       cpSync(src, dest, { recursive: true, force: true })

@@ -125,6 +125,33 @@ export namespace Database {
     return sql.sort((a, b) => a.timestamp - b.timestamp)
   }
 
+  function findMigrationDir(): string | undefined {
+    const execDir = path.dirname(process.execPath)
+    return [
+      path.join(import.meta.dirname, "../../migration"),
+      path.join(execDir, "migration"),
+      path.join(execDir, "../Resources/migration"),
+      path.join(execDir, "../migration"),
+    ].find((dir) => {
+      try {
+        return readdirSync(dir).length > 0
+      } catch {
+        return false
+      }
+    })
+  }
+
+  export function runMigrations(): { applied: number } {
+    const db = Client()
+    const migrationDir = findMigrationDir()
+    const entries = migrationDir ? migrations(migrationDir) : []
+    if (entries.length > 0) {
+      log.info("applying migrations (manual)", { count: entries.length })
+      migrate(db, entries)
+    }
+    return { applied: entries.length }
+  }
+
   export const Client = lazy(() => {
     log.info("opening database", { path: Database.Path })
 
@@ -142,19 +169,7 @@ export namespace Database {
 
     const db = drizzle({ client: sqlite, schema })
 
-    const execDir = path.dirname(process.execPath)
-    const migrationDir = [
-      path.join(import.meta.dirname, "../../migration"),
-      path.join(execDir, "migration"),
-      path.join(execDir, "../Resources/migration"),
-      path.join(execDir, "../migration"),
-    ].find((dir) => {
-      try {
-        return readdirSync(dir).length > 0
-      } catch {
-        return false
-      }
-    })
+    const migrationDir = findMigrationDir()
     const entries = migrationDir ? migrations(migrationDir) : []
     if (entries.length > 0) {
       log.info("applying migrations", { count: entries.length })

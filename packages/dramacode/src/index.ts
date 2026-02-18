@@ -7,7 +7,7 @@ import { ChatCommand } from "./cli/cmd/chat"
 import { DramaCommand } from "./cli/cmd/drama"
 import { Server } from "./server/server"
 
-export const VERSION = "0.4.6"
+export const VERSION = "0.4.7"
 Server.setVersion(VERSION)
 
 process.on("unhandledRejection", (e) => {

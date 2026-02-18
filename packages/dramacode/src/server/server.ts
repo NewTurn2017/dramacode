@@ -13,7 +13,8 @@ import { DramaRoutes, EpisodeRoutes, SceneRoutes, CharacterImageRoutes, WorldRou
 import { WriterRoutes } from "./routes/writer"
 import { ScrapRoutes } from "./routes/scrap"
 import { EventRoutes } from "./routes/events"
-import { NotFoundError } from "../storage/db"
+import { DataRoutes } from "./routes/data"
+import { NotFoundError, Database } from "../storage/db"
 import { cleanupDuplicates } from "../chat/structured"
 
 const log = Log.create({ service: "server" })
@@ -77,6 +78,7 @@ export namespace Server {
         .route("/writer", WriterRoutes())
         .route("/scrap", ScrapRoutes())
         .route("/events", EventRoutes())
+        .route("/data", DataRoutes())
         .put("/auth/:providerID", async (c) => {
           const providerID = c.req.param("providerID")
           const body = await c.req.json()
@@ -220,6 +222,16 @@ export namespace Server {
           return new Response(body, {
             headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive" },
           })
+        })
+        .post("/migrate", (c) => {
+          try {
+            const result = Database.runMigrations()
+            log.info("manual migration completed", result)
+            return c.json({ ok: true, applied: result.applied })
+          } catch (err) {
+            log.error("manual migration failed", { error: String(err) })
+            return c.json({ error: err instanceof Error ? err.message : String(err) }, 500)
+          }
         })
         .post("/shutdown", (c) => {
           log.info("shutdown requested via API")

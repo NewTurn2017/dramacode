@@ -267,6 +267,20 @@ export const api = {
     progress: () => get<UpdateProgress>("/update/progress"),
     apply: () => post<{ ok: boolean }>("/update/apply", {}),
   },
+  migrate: () => post<{ ok: boolean; applied: number }>("/migrate", {}),
+  data: {
+    exportUrl: `${BASE}/data/export`,
+    import: async (file: File) => {
+      const form = new FormData()
+      form.append("file", file)
+      const res = await fetch(`${BASE}/data/import`, { method: "POST", body: form })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error ?? res.statusText)
+      }
+      return res.json() as Promise<{ ok: boolean; message: string }>
+    },
+  },
   shutdown: () => post<{ ok: boolean }>("/shutdown", {}),
   aliveUrl: `${BASE}/alive`,
   drama: {
