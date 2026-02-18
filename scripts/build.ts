@@ -172,25 +172,19 @@ wait $SERVER_PID
 </plist>`
   writeFileSync(path.join(appDir, "Info.plist"), plist)
 
+  rmSync(dist, { recursive: true, force: true })
+
   mkdirSync(tmpDmg, { recursive: true })
   cpSync(path.join(tmpApp, "DRAMACODE.app"), path.join(tmpDmg, "DRAMACODE.app"), { recursive: true })
+  rmSync(tmpApp, { recursive: true, force: true })
   await $`ln -s /Applications ${path.join(tmpDmg, "Applications")}`.quiet()
-  // Detach any previously mounted DRAMACODE volumes to avoid "Resource busy"
   try { await $`hdiutil detach /Volumes/DRAMACODE 2>/dev/null`.quiet() } catch {}
   if (existsSync(dmgPath)) rmSync(dmgPath)
   await $`hdiutil create -volname DRAMACODE -srcfolder ${tmpDmg} -ov -format UDZO ${dmgPath}`.quiet()
 
-  rmSync(tmpApp, { recursive: true, force: true })
   rmSync(tmpDmg, { recursive: true, force: true })
   console.log(`  ${dmgName}`)
 }
 
-// --- Summary ---
-
-try {
-  const total = (await $`du -sh ${dist}`.text()).split("\t")[0]
-  console.log(`\nDone! dist/ (${total})`)
-} catch {
-  console.log(`\nDone!`)
-}
+console.log(`\nDone!`)
 console.log(`\nRun: ./dist/${binaryName} serve --open`)
