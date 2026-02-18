@@ -175,6 +175,9 @@ wait $SERVER_PID
   mkdirSync(tmpDmg, { recursive: true })
   cpSync(path.join(tmpApp, "DRAMACODE.app"), path.join(tmpDmg, "DRAMACODE.app"), { recursive: true })
   await $`ln -s /Applications ${path.join(tmpDmg, "Applications")}`.quiet()
+  // Detach any previously mounted DRAMACODE volumes to avoid "Resource busy"
+  try { await $`hdiutil detach /Volumes/DRAMACODE 2>/dev/null`.quiet() } catch {}
+  if (existsSync(dmgPath)) rmSync(dmgPath)
   await $`hdiutil create -volname DRAMACODE -srcfolder ${tmpDmg} -ov -format UDZO ${dmgPath}`.quiet()
 
   rmSync(tmpApp, { recursive: true, force: true })
