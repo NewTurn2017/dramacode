@@ -206,6 +206,14 @@ export const api = {
     setKey: (key: string) =>
       request<boolean>("/auth/openai", { method: "PUT", body: JSON.stringify({ type: "api", key }) }),
     logout: () => del("/auth/openai"),
+    anthropic: {
+      login: () => post<{ url: string; verifier: string }>("/auth/anthropic/login", {}),
+      callback: (code: string, verifier: string) =>
+        post<{ ok: boolean }>("/auth/anthropic/callback", { code, verifier }),
+      setKey: (key: string) =>
+        request<boolean>("/auth/anthropic", { method: "PUT", body: JSON.stringify({ type: "api", key }) }),
+      logout: () => del("/auth/anthropic"),
+    },
   },
   update: {
     check: () => get<UpdateStatus>("/update/check"),
@@ -289,22 +297,22 @@ export const api = {
     updateTitle: (id: string, title: string) => patch<Session>(`/session/${id}`, { title }),
   },
   chat: {
-    stream: (sessionId: string, content: string, signal?: AbortSignal) =>
+    stream: (sessionId: string, content: string, signal?: AbortSignal, provider?: string) =>
       fetch(`${BASE}/chat/${sessionId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, provider }),
         signal,
       }),
-    greet: (sessionId: string, signal?: AbortSignal) =>
+    greet: (sessionId: string, signal?: AbortSignal, provider?: string) =>
       fetch(`${BASE}/chat/${sessionId}/greet`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: "{}",
+        body: JSON.stringify({ provider }),
         signal,
       }),
-    organize: (sessionId: string) =>
-      post<{ status: string; stats?: Record<string, number> }>(`/chat/${sessionId}/organize`, {}),
+    organize: (sessionId: string, provider?: string) =>
+      post<{ status: string; stats?: Record<string, number> }>(`/chat/${sessionId}/organize`, { provider }),
   },
   writer: {
     list: () => get<WriterStyle[]>("/writer"),

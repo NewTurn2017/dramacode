@@ -4,6 +4,7 @@ import path from "path"
 import { Log } from "../util/log"
 import { Auth } from "../auth"
 import { OpenAIAuth } from "../plugin/openai"
+import { AnthropicAuth } from "../plugin/anthropic"
 import { Updater } from "../update"
 import { lazy } from "../util/lazy"
 import { SessionRoutes } from "./routes/session"
@@ -101,6 +102,32 @@ export namespace Server {
           } catch (err) {
             log.error("openai device login failed", { error: String(err) })
             return c.json({ error: "Failed to start device login" }, 500)
+          }
+        })
+        .post("/auth/anthropic/login", async (c) => {
+          try {
+            const { url, verifier } = await AnthropicAuth.webLogin()
+            return c.json({ url, verifier })
+          } catch (err) {
+            log.error("anthropic login failed", { error: String(err) })
+            return c.json({ error: "Failed to start Anthropic login" }, 500)
+          }
+        })
+        .post("/auth/anthropic/callback", async (c) => {
+          try {
+            const body = await c.req.json<{ code: string; verifier: string }>()
+            if (!body.code || !body.verifier) return c.json({ error: "code and verifier required" }, 400)
+            const login = await AnthropicAuth.exchange(body.code, body.verifier)
+            await Auth.set("anthropic", {
+              type: "oauth",
+              refresh: login.refresh,
+              access: login.access,
+              expires: login.expires,
+            })
+            return c.json({ ok: true })
+          } catch (err) {
+            log.error("anthropic callback failed", { error: String(err) })
+            return c.json({ error: err instanceof Error ? err.message : "Anthropic auth failed" }, 500)
           }
         })
         .get("/update/check", async (c) => {

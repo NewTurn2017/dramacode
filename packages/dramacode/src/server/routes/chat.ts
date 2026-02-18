@@ -1,13 +1,14 @@
 import { Hono } from "hono"
 import { stream } from "hono/streaming"
-import { Chat } from "../../chat"
+import { Chat, type ProviderKind } from "../../chat"
 
 export function ChatRoutes() {
   return new Hono()
     .post("/:sessionID/greet", async (c) => {
       const sessionID = c.req.param("sessionID")
+      const body = await c.req.json<{ provider?: ProviderKind }>().catch(() => ({}) as { provider?: ProviderKind })
 
-      const result = await Chat.greet({ session_id: sessionID })
+      const result = await Chat.greet({ session_id: sessionID, provider: body.provider })
 
       c.header("Content-Type", "text/plain; charset=utf-8")
       c.header("Transfer-Encoding", "chunked")
@@ -23,6 +24,7 @@ export function ChatRoutes() {
       const body = await c.req.json<{
         content: string
         model?: string
+        provider?: ProviderKind
         drama_title?: string
         episode_num?: number
       }>()
@@ -33,6 +35,7 @@ export function ChatRoutes() {
         session_id: sessionID,
         content: body.content,
         model: body.model,
+        provider: body.provider,
       })
 
       c.header("Content-Type", "text/plain; charset=utf-8")
@@ -46,7 +49,8 @@ export function ChatRoutes() {
     })
     .post("/:sessionID/organize", async (c) => {
       const sessionID = c.req.param("sessionID")
-      const result = await Chat.organize({ session_id: sessionID })
+      const body = await c.req.json<{ provider?: ProviderKind }>().catch(() => ({}) as { provider?: ProviderKind })
+      const result = await Chat.organize({ session_id: sessionID, provider: body.provider })
       return c.json(result)
     })
     .post("/:sessionID/sync", async (c) => {
@@ -54,6 +58,7 @@ export function ChatRoutes() {
       const body = await c.req.json<{
         content: string
         model?: string
+        provider?: ProviderKind
         drama_title?: string
         episode_num?: number
       }>()
@@ -64,6 +69,7 @@ export function ChatRoutes() {
         session_id: sessionID,
         content: body.content,
         model: body.model,
+        provider: body.provider,
       })
 
       return c.json(message)

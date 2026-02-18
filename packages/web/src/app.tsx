@@ -6,15 +6,14 @@ import { AuthGuideModal } from "./components/auth-guide-modal"
 import { ToastProvider } from "./components/toast-provider"
 import { CommandPalette } from "./components/command-palette"
 
-function AuthSection() {
-  const [authData, { refetch }] = createResource(() => api.auth.status())
+function OpenAIAuthSection(props: { providers: string[]; onUpdate: () => void }) {
   const [apiKeyInput, setApiKeyInput] = createSignal("")
   const [showKeyInput, setShowKeyInput] = createSignal(false)
   const [loading, setLoading] = createSignal(false)
   const [deviceCode, setDeviceCode] = createSignal<{ url: string; userCode: string } | null>(null)
   const [showGuide, setShowGuide] = createSignal(false)
 
-  const isLoggedIn = () => authData()?.providers.includes("openai") ?? false
+  const isLoggedIn = () => props.providers.includes("openai")
 
   async function handleDeviceLogin() {
     setLoading(true)
@@ -28,7 +27,7 @@ function AuthSection() {
           clearInterval(poll)
           setDeviceCode(null)
           setLoading(false)
-          refetch()
+          props.onUpdate()
         }
       }, 3000)
       setTimeout(() => {
@@ -48,16 +47,16 @@ function AuthSection() {
     await api.auth.setKey(key)
     setApiKeyInput("")
     setShowKeyInput(false)
-    refetch()
+    props.onUpdate()
   }
 
   async function handleLogout() {
     await api.auth.logout()
-    refetch()
+    props.onUpdate()
   }
 
   return (
-    <div class="p-3 border-t border-border space-y-2">
+    <>
       <Show
         when={isLoggedIn()}
         fallback={
@@ -137,8 +136,171 @@ function AuthSection() {
           </button>
         </div>
       </Show>
-      <VersionBadge />
       <AuthGuideModal open={showGuide()} onClose={() => setShowGuide(false)} />
+    </>
+  )
+}
+
+function AnthropicAuthSection(props: { providers: string[]; onUpdate: () => void }) {
+  const [loading, setLoading] = createSignal(false)
+  const [pendingAuth, setPendingAuth] = createSignal<{ url: string; verifier: string } | null>(null)
+  const [codeInput, setCodeInput] = createSignal("")
+  const [error, setError] = createSignal("")
+  const [showKeyInput, setShowKeyInput] = createSignal(false)
+  const [apiKeyInput, setApiKeyInput] = createSignal("")
+
+  const isLoggedIn = () => props.providers.includes("anthropic")
+
+  async function handleLogin() {
+    setLoading(true)
+    setError("")
+    try {
+      const { url, verifier } = await api.auth.anthropic.login()
+      setPendingAuth({ url, verifier })
+      window.open(url, "_blank")
+    } catch {
+      setError("로그인 시작 실패")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleCodeSubmit() {
+    const code = codeInput().trim()
+    const auth = pendingAuth()
+    if (!code || !auth) return
+    setLoading(true)
+    setError("")
+    try {
+      await api.auth.anthropic.callback(code, auth.verifier)
+      setPendingAuth(null)
+      setCodeInput("")
+      props.onUpdate()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "인증 코드 교환 실패")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleSetKey() {
+    const key = apiKeyInput().trim()
+    if (!key) return
+    await api.auth.anthropic.setKey(key)
+    setApiKeyInput("")
+    setShowKeyInput(false)
+    props.onUpdate()
+  }
+
+  async function handleLogout() {
+    await api.auth.anthropic.logout()
+    props.onUpdate()
+  }
+
+  return (
+    <Show
+      when={isLoggedIn()}
+      fallback={
+        <div class="space-y-1.5">
+          <Show when={pendingAuth()}>
+            <div class="p-2 rounded-md bg-bg border border-border space-y-1.5">
+              <p class="text-[10px] text-text-dim">인증 완료 후 코드를 붙여넣으세요:</p>
+              <div class="flex gap-1">
+                <input
+                  type="text"
+                  placeholder="코드 붙여넣기"
+                  value={codeInput()}
+                  onInput={(e) => setCodeInput(e.currentTarget.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleCodeSubmit()}
+                  class="flex-1 min-w-0 px-2 py-1 text-xs bg-bg border border-border rounded-md text-text placeholder:text-text-dim/50 focus:outline-none focus:border-accent font-mono"
+                />
+                <button
+                  onClick={handleCodeSubmit}
+                  disabled={loading() || !codeInput().trim()}
+                  class="px-2 py-1 text-xs bg-[#d4956b] text-white rounded-md hover:bg-[#c4854b] transition-colors disabled:opacity-50"
+                >
+                  확인
+                </button>
+              </div>
+              <a
+                href={pendingAuth()!.url}
+                target="_blank"
+                rel="noopener"
+                class="block text-[10px] text-[#d4956b] hover:underline text-center"
+              >
+                인증 페이지 다시 열기 ↗
+              </a>
+              <button
+                onClick={() => { setPendingAuth(null); setCodeInput(""); setError("") }}
+                class="w-full text-[10px] text-text-dim hover:text-text transition-colors"
+              >
+                취소
+              </button>
+            </div>
+          </Show>
+          <Show when={!pendingAuth()}>
+            <button
+              onClick={handleLogin}
+              disabled={loading()}
+              class="w-full px-3 py-1.5 text-xs font-medium rounded-md bg-[#d4956b] text-white hover:bg-[#c4854b] transition-colors disabled:opacity-50"
+            >
+              Claude 로그인
+            </button>
+            <Show
+              when={showKeyInput()}
+              fallback={
+                <button
+                  onClick={() => setShowKeyInput(true)}
+                  class="w-full px-3 py-1.5 text-xs text-text-dim hover:text-text border border-border rounded-md hover:bg-bg-hover transition-colors"
+                >
+                  Anthropic API 키 입력
+                </button>
+              }
+            >
+              <div class="flex gap-1">
+                <input
+                  type="password"
+                  placeholder="sk-ant-..."
+                  value={apiKeyInput()}
+                  onInput={(e) => setApiKeyInput(e.currentTarget.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSetKey()}
+                  class="flex-1 min-w-0 px-2 py-1 text-xs bg-bg border border-border rounded-md text-text placeholder:text-text-dim/50 focus:outline-none focus:border-accent"
+                />
+                <button
+                  onClick={handleSetKey}
+                  class="px-2 py-1 text-xs bg-[#d4956b] text-white rounded-md hover:bg-[#c4854b] transition-colors"
+                >
+                  저장
+                </button>
+              </div>
+            </Show>
+          </Show>
+          <Show when={error()}>
+            <p class="text-[10px] text-danger text-center">{error()}</p>
+          </Show>
+        </div>
+      }
+    >
+      <div class="flex items-center justify-between">
+        <span class="text-xs text-success">● Claude 연결됨</span>
+        <button onClick={handleLogout} class="text-xs text-text-dim hover:text-danger transition-colors">
+          로그아웃
+        </button>
+      </div>
+    </Show>
+  )
+}
+
+function AuthSection() {
+  const [authData, { refetch }] = createResource(() => api.auth.status())
+
+  const providers = () => authData()?.providers ?? []
+
+  return (
+    <div class="p-3 border-t border-border space-y-2">
+      <OpenAIAuthSection providers={providers()} onUpdate={refetch} />
+      <AnthropicAuthSection providers={providers()} onUpdate={refetch} />
+      <VersionBadge />
     </div>
   )
 }

@@ -1,7 +1,10 @@
-import { streamText, generateText, stepCountIs, type ModelMessage } from "ai"
+import { streamText, generateText, stepCountIs, type LanguageModel, type ModelMessage } from "ai"
 import { createOpenAI } from "@ai-sdk/openai"
+import { createAnthropic, type AnthropicProviderOptions } from "@ai-sdk/anthropic"
+import type { JSONObject } from "@ai-sdk/provider"
 import { Auth, OAUTH_DUMMY_KEY } from "../auth"
 import { OpenAIAuth } from "../plugin/openai"
+import { AnthropicAuth } from "../plugin/anthropic"
 import { DramaPrompt } from "./prompt"
 import { dramaTools, syncProjectTool } from "./tools"
 import { Session } from "../session"
@@ -15,12 +18,61 @@ import { EventBus } from "../server/routes/events"
 
 const log = Log.create({ service: "chat" })
 
+export type ProviderKind = "openai" | "anthropic"
+
+type ResolvedProvider = {
+  kind: ProviderKind
+  call: (id: string) => LanguageModel
+  defaultModel: string
+}
+
 export namespace Chat {
-  async function provider() {
-    const auth = await Auth.get("openai")
-    if (!auth) throw new Error("OpenAI not authenticated. Run: dramacode auth login")
-    if (auth.type === "api") return createOpenAI({ apiKey: auth.key })
-    return createOpenAI({ apiKey: OAUTH_DUMMY_KEY, fetch: OpenAIAuth.createFetch("openai") })
+  export async function resolveProvider(preferred?: ProviderKind): Promise<ResolvedProvider> {
+    if (preferred === "anthropic" || !preferred) {
+      const auth = await Auth.get("anthropic")
+      if (auth) {
+        if (auth.type === "api") {
+          const instance = createAnthropic({ apiKey: auth.key })
+          return { kind: "anthropic", call: (id) => instance(id), defaultModel: "claude-sonnet-4-6" }
+        }
+        const instance = createAnthropic({ apiKey: OAUTH_DUMMY_KEY, fetch: AnthropicAuth.createFetch("anthropic") })
+        return { kind: "anthropic", call: (id) => instance(id), defaultModel: "claude-sonnet-4-6" }
+      }
+    }
+    if (preferred === "openai" || !preferred) {
+      const auth = await Auth.get("openai")
+      if (auth) {
+        if (auth.type === "api") {
+          const instance = createOpenAI({ apiKey: auth.key })
+          return { kind: "openai", call: (id) => instance(id), defaultModel: "gpt-5.2" }
+        }
+        const instance = createOpenAI({ apiKey: OAUTH_DUMMY_KEY, fetch: OpenAIAuth.createFetch("openai") })
+        return { kind: "openai", call: (id) => instance(id), defaultModel: "gpt-5.2" }
+      }
+    }
+    if (preferred) {
+      return resolveProvider()
+    }
+    throw new Error("인증되지 않았습니다. OpenAI 또는 Anthropic에 로그인해 주세요.")
+  }
+
+  type SystemOptsResult = {
+    system?: string
+    providerOptions?: Record<string, JSONObject>
+  }
+
+  function systemOpts(kind: ProviderKind, system: string): SystemOptsResult {
+    if (kind === "openai") {
+      return { providerOptions: { openai: { instructions: system, store: false } } }
+    }
+    return {
+      system,
+      providerOptions: {
+        anthropic: {
+          thinking: { type: "adaptive" },
+        } satisfies AnthropicProviderOptions,
+      },
+    }
   }
 
   function toModel(messages: Session.Message[]): ModelMessage[] {
@@ -35,7 +87,7 @@ export namespace Chat {
     drama_id?: string | null
     summary_count: number
     model: string
-    openai: Awaited<ReturnType<typeof provider>>
+    provider: ResolvedProvider
   }) {
     const total = Session.totalChars(input.session_id)
     const messages = Session.messages(input.session_id, 10_000)
@@ -47,9 +99,9 @@ export namespace Chat {
       messages,
       summarize: async (prompt) => {
         const response = await generateText({
-          model: input.openai(input.model),
+          model: input.provider.call(input.model),
           prompt,
-          providerOptions: { openai: { store: false } },
+          ...(input.provider.kind === "openai" ? { providerOptions: { openai: { store: false } } } : {}),
         })
         return response.text
       },
@@ -71,7 +123,7 @@ export namespace Chat {
   }
 
   async function autosave(input: {
-    openai: Awaited<ReturnType<typeof provider>>
+    provider: ResolvedProvider
     model: string
     drama_id?: string | null
     user: string
@@ -100,16 +152,11 @@ export namespace Chat {
     const sync = syncProjectTool({ drama_id: input.drama_id })
     try {
       const out = streamText({
-        model: input.openai(input.model),
+        model: input.provider.call(input.model),
         messages: [{ role: "user", content: syncPrompt }],
         tools: { sync_project_data: sync.sync_project_data },
         stopWhen: stepCountIs(2),
-        providerOptions: {
-          openai: {
-            instructions: "Tool-calling sync agent. Always call sync_project_data once.",
-            store: false,
-          },
-        },
+        ...systemOpts(input.provider.kind, "Tool-calling sync agent. Always call sync_project_data once."),
       })
       await out.text
     } catch (error) {
@@ -183,20 +230,17 @@ export namespace Chat {
     for (const turn of [1, 2, 3]) {
       const response = await (async () => {
         const out = streamText({
-          model: input.openai(input.model),
+          model: input.provider.call(input.model),
           messages: [
             {
               role: "user",
               content: retry ? `${basePrompt}\n\n이전 추출 오류를 수정하세요: ${retry}` : basePrompt,
             },
           ],
-          providerOptions: {
-            openai: {
-              instructions:
-                "You are a strict structured data extractor. Return only JSON matching keys: drama, characters, episodes, world, plot_points, scenes.",
-              store: false,
-            },
-          },
+          ...systemOpts(
+            input.provider.kind,
+            "You are a strict structured data extractor. Return only JSON matching keys: drama, characters, episodes, world, plot_points, scenes.",
+          ),
         })
         return { text: await out.text }
       })().catch((error) => {
@@ -314,9 +358,9 @@ export namespace Chat {
     })
   }
 
-  export async function organize(input: { session_id: string; model?: string }) {
-    const openai = await provider()
-    const model = input.model ?? "gpt-5.2"
+  export async function organize(input: { session_id: string; model?: string; provider?: ProviderKind }) {
+    const p = await resolveProvider(input.provider)
+    const model = input.model ?? p.defaultModel
     const session = Session.get(input.session_id)
     if (!session.drama_id) throw new Error("session has no drama_id")
 
@@ -347,16 +391,11 @@ export namespace Chat {
     const sync = syncProjectTool({ drama_id: session.drama_id })
     try {
       const out = streamText({
-        model: openai(model),
+        model: p.call(model),
         messages: [{ role: "user", content: prompt }],
         tools: { sync_project_data: sync.sync_project_data },
         stopWhen: stepCountIs(3),
-        providerOptions: {
-          openai: {
-            instructions: "Tool-calling sync agent. Always call sync_project_data exactly once with all entities.",
-            store: false,
-          },
-        },
+        ...systemOpts(p.kind, "Tool-calling sync agent. Always call sync_project_data exactly once with all entities."),
       })
       await out.text
     } catch (error) {
@@ -379,11 +418,12 @@ export namespace Chat {
   export async function resync(input: {
     drama_id: string
     model?: string
+    provider?: ProviderKind
     session_limit?: number
     pair_limit?: number
   }) {
-    const openai = await provider()
-    const model = input.model ?? "gpt-5.2"
+    const p = await resolveProvider(input.provider)
+    const model = input.model ?? p.defaultModel
     const sessionLimit = Math.max(1, Math.min(100, input.session_limit ?? 20))
     const pairLimit = Math.max(1, Math.min(200, input.pair_limit ?? 20))
     const sessions = Session.listByDrama(input.drama_id, sessionLimit)
@@ -404,7 +444,7 @@ export namespace Chat {
     const recent = pairs.slice(-pairLimit)
     for (const pair of recent) {
       await autosave({
-        openai,
+        provider: p,
         model,
         drama_id: input.drama_id,
         user: pair.user,
@@ -432,9 +472,9 @@ export namespace Chat {
     }
   }
 
-  export async function send(input: { session_id: string; content: string; model?: string }) {
-    const openai = await provider()
-    const model = input.model ?? "gpt-5.2"
+  export async function send(input: { session_id: string; content: string; model?: string; provider?: ProviderKind }) {
+    const p = await resolveProvider(input.provider)
+    const model = input.model ?? p.defaultModel
 
     Session.addMessage({
       session_id: input.session_id,
@@ -448,7 +488,7 @@ export namespace Chat {
       drama_id: session.drama_id,
       summary_count: session.summary_count,
       model,
-      openai,
+      provider: p,
     })
     const history = Session.messages(input.session_id)
     const base = DramaPrompt.buildContext(session.drama_id)
@@ -472,11 +512,11 @@ export namespace Chat {
     })
 
     const result = streamText({
-      model: openai(model),
+      model: p.call(model),
       messages: toModel(history),
       tools,
       stopWhen: stepCountIs(12),
-      providerOptions: { openai: { instructions: system, store: false } },
+      ...systemOpts(p.kind, system),
     })
 
     const text = await result.text
@@ -494,19 +534,19 @@ export namespace Chat {
     return { message: msg, stream: result }
   }
 
-  export async function greet(input: { session_id: string; model?: string }) {
-    const openai = await provider()
-    const model = input.model ?? "gpt-5.2"
+  export async function greet(input: { session_id: string; model?: string; provider?: ProviderKind }) {
+    const p = await resolveProvider(input.provider)
+    const model = input.model ?? p.defaultModel
     const session = Session.get(input.session_id)
     const system = DramaPrompt.buildContext(session.drama_id)
     const dramaTitle = session.drama_id ? Drama.get(session.drama_id).title : undefined
 
     return streamText({
-      model: openai(model),
+      model: p.call(model),
       messages: [{ role: "user", content: DramaPrompt.greetingPrompt(dramaTitle) }],
       tools: dramaTools({ session_id: input.session_id, drama_id: session.drama_id }),
       stopWhen: stepCountIs(3),
-      providerOptions: { openai: { instructions: system, store: false } },
+      ...systemOpts(p.kind, system),
       async onFinish({ text }) {
         if (text.trim()) {
           Session.addMessage({
@@ -519,9 +559,9 @@ export namespace Chat {
     })
   }
 
-  export async function stream(input: { session_id: string; content: string; model?: string }) {
-    const openai = await provider()
-    const model = input.model ?? "gpt-5.2"
+  export async function stream(input: { session_id: string; content: string; model?: string; provider?: ProviderKind }) {
+    const p = await resolveProvider(input.provider)
+    const model = input.model ?? p.defaultModel
 
     Session.addMessage({
       session_id: input.session_id,
@@ -535,7 +575,7 @@ export namespace Chat {
       drama_id: session.drama_id,
       summary_count: session.summary_count,
       model,
-      openai,
+      provider: p,
     })
     const history = Session.messages(input.session_id)
     const base = DramaPrompt.buildContext(session.drama_id)
@@ -553,11 +593,11 @@ export namespace Chat {
     const tools = dramaTools({ session_id: input.session_id, drama_id: session.drama_id })
 
     return streamText({
-      model: openai(model),
+      model: p.call(model),
       messages: toModel(history),
       tools,
       stopWhen: stepCountIs(12),
-      providerOptions: { openai: { instructions: system, store: false } },
+      ...systemOpts(p.kind, system),
       async onFinish({ text, steps }) {
         if (text.trim()) {
           Session.addMessage({
