@@ -227,6 +227,8 @@ export const api = {
     progress: () => get<UpdateProgress>("/update/progress"),
     apply: () => post<{ ok: boolean }>("/update/apply", {}),
   },
+  shutdown: () => post<{ ok: boolean }>("/shutdown", {}),
+  aliveUrl: `${BASE}/alive`,
   drama: {
     list: () => get<Drama[]>("/drama"),
     get: (id: string) => get<Drama>(`/drama/${id}`),

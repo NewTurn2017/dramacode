@@ -291,6 +291,34 @@ function AnthropicAuthSection(props: { providers: string[]; onUpdate: () => void
   )
 }
 
+function ShutdownButton() {
+  const [confirming, setConfirming] = createSignal(false)
+
+  async function handleShutdown() {
+    if (!confirming()) {
+      setConfirming(true)
+      setTimeout(() => setConfirming(false), 3000)
+      return
+    }
+    try {
+      await api.shutdown()
+    } catch {}
+  }
+
+  return (
+    <button
+      onClick={handleShutdown}
+      class="w-full px-2 py-1 text-[10px] rounded-md transition-colors"
+      classList={{
+        "text-text-dim hover:text-danger hover:bg-danger/10 border border-transparent hover:border-danger/20": !confirming(),
+        "text-danger bg-danger/10 border border-danger/30 font-medium": confirming(),
+      }}
+    >
+      {confirming() ? "한번 더 클릭하면 종료됩니다" : "앱 종료"}
+    </button>
+  )
+}
+
 function AuthSection() {
   const [authData, { refetch }] = createResource(() => api.auth.status())
 
@@ -301,6 +329,7 @@ function AuthSection() {
       <OpenAIAuthSection providers={providers()} onUpdate={refetch} />
       <AnthropicAuthSection providers={providers()} onUpdate={refetch} />
       <VersionBadge />
+      <ShutdownButton />
     </div>
   )
 }
@@ -429,6 +458,19 @@ function VersionBadge() {
 
 export default function App(props: ParentProps) {
   const location = useLocation()
+
+  onMount(() => {
+    let es: EventSource | null = null
+    function connect() {
+      es = new EventSource(api.aliveUrl)
+      es.onerror = () => {
+        es?.close()
+        setTimeout(connect, 3000)
+      }
+    }
+    connect()
+    onCleanup(() => es?.close())
+  })
 
   return (
     <div class="flex h-screen overflow-hidden">

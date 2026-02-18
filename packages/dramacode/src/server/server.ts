@@ -21,6 +21,9 @@ let _url: URL | undefined
 let _version = "0.1.0"
 let _cachedUpdate: Awaited<ReturnType<typeof Updater.check>> = null
 let _updateState: { step: "idle" | "downloading" | "downloaded" | "applying" | "restarting" | "error"; percent: number; error?: string; zipPath?: string } = { step: "idle", percent: 0 }
+let _aliveConnections = 0
+let _shutdownTimer: ReturnType<typeof setTimeout> | undefined
+const SHUTDOWN_GRACE_MS = 15_000
 
 export namespace Server {
   export function url(): URL {
@@ -177,6 +180,44 @@ export namespace Server {
             _updateState = { step: "error", percent: 0, error: String(err) }
             return c.json({ error: String(err) }, 500)
           }
+        })
+        .get("/alive", (c) => {
+          const encoder = new TextEncoder()
+          const body = new ReadableStream({
+            start(controller) {
+              _aliveConnections++
+              if (_shutdownTimer) {
+                clearTimeout(_shutdownTimer)
+                _shutdownTimer = undefined
+                log.info("shutdown cancelled, browser reconnected", { connections: _aliveConnections })
+              }
+              controller.enqueue(encoder.encode("data: connected\n\n"))
+              const ping = setInterval(() => {
+                try { controller.enqueue(encoder.encode(": ping\n\n")) } catch {}
+              }, 15000)
+              const signal = c.req.raw.signal as EventTarget
+              signal.addEventListener("abort", () => {
+                _aliveConnections = Math.max(0, _aliveConnections - 1)
+                clearInterval(ping)
+                try { controller.close() } catch {}
+                if (_aliveConnections === 0) {
+                  log.info("all browsers disconnected, shutting down in 15s")
+                  _shutdownTimer = setTimeout(() => {
+                    log.info("no reconnection, shutting down")
+                    process.exit(0)
+                  }, SHUTDOWN_GRACE_MS)
+                }
+              })
+            },
+          })
+          return new Response(body, {
+            headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive" },
+          })
+        })
+        .post("/shutdown", (c) => {
+          log.info("shutdown requested via API")
+          setTimeout(() => process.exit(0), 500)
+          return c.json({ ok: true })
         }) as unknown as Hono,
   )
 
