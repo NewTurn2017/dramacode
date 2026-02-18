@@ -40,7 +40,9 @@ export namespace Log {
         ...extra,
       })
       if (printToStderr) process.stderr.write(entry + "\n")
-      if (logFile) fs.appendFile(logFile, entry + "\n").catch(() => {})
+      if (logFile) fs.appendFile(logFile, entry + "\n").catch((err) => {
+        process.stderr.write(`[log-write-error] ${err}\n${entry}\n`)
+      })
     }
 
     return {

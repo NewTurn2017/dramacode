@@ -173,6 +173,7 @@ export namespace Session {
     session_id: string
     role: "user" | "assistant" | "system"
     content: string
+    images?: string
   }): Message {
     const id = ulid()
     const now = Date.now()
@@ -184,6 +185,7 @@ export namespace Session {
           session_id: input.session_id,
           role: input.role,
           content: input.content,
+          images: input.images ?? null,
           time_created: now,
           time_updated: now,
         })

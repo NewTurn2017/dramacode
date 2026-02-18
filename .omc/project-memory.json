@@ -1,0 +1,127 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1771376519637,
+  "projectRoot": "/Users/jaehyunjang/web/dramacode",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": "npm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "npm run build",
+    "testCommand": "npm test",
+    "lintCommand": null,
+    "devCommand": "npm run dev",
+    "scripts": {
+      "dev": "bun run --cwd packages/dramacode src/index.ts",
+      "typecheck": "bun run --cwd packages/dramacode typecheck && bun run --cwd packages/web typecheck",
+      "test": "echo 'do-not-run-tests-from-root' && exit 1",
+      "build": "bun run scripts/build.ts",
+      "release": "bun run scripts/release.ts"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": true,
+    "workspaces": [
+      "packages/*"
+    ],
+    "mainDirectories": [
+      "assets",
+      "docs",
+      "scripts"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "assets": {
+      "path": "assets",
+      "purpose": "Static assets",
+      "fileCount": 6,
+      "lastAccessed": 1771376519625,
+      "keyFiles": [
+        "AppIcon.icns",
+        "AppIcon.ico",
+        "entitlements.plist",
+        "favicon.svg",
+        "icon-preview.png"
+      ]
+    },
+    "dist": {
+      "path": "dist",
+      "purpose": "Distribution/build output",
+      "fileCount": 2,
+      "lastAccessed": 1771376519629,
+      "keyFiles": [
+        "dramacode",
+        "vec0.dylib"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 2,
+      "lastAccessed": 1771376519630,
+      "keyFiles": [
+        "oauth.md",
+        "release-guide.md"
+      ]
+    },
+    "packages": {
+      "path": "packages",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1771376519630,
+      "keyFiles": []
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 2,
+      "lastAccessed": 1771376519631,
+      "keyFiles": [
+        "build.ts",
+        "release.ts"
+      ]
+    },
+    "tmp": {
+      "path": "tmp",
+      "purpose": null,
+      "fileCount": 17,
+      "lastAccessed": 1771376519632,
+      "keyFiles": [
+        "playwriter-screenshot-1771241811493-wsbi.jpg",
+        "playwriter-screenshot-1771241821993-gz4b.jpg",
+        "playwriter-screenshot-1771241833665-3br7.jpg",
+        "playwriter-screenshot-1771241844935-kau8.jpg",
+        "playwriter-screenshot-1771245696221-w3ny.jpg"
+      ]
+    }
+  },
+  "hotPaths": [],
+  "userDirectives": []
+}

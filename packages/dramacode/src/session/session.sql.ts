@@ -22,6 +22,7 @@ export const MessageTable = sqliteTable(
       .references(() => SessionTable.id, { onDelete: "cascade" }),
     role: text().notNull(),
     content: text().notNull(),
+    images: text(), // JSON array of saved filenames, e.g. '["abc.png","def.jpg"]'
     ...Timestamps,
   },
   (table) => [index("message_session_idx").on(table.session_id)],

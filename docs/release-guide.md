@@ -147,17 +147,33 @@ v* 태그 push
 
 ```bash
 # 1. 버전 확인 (packages/dramacode/src/index.ts의 VERSION 상수)
-# 2. 태그 생성 및 푸시
+# 2. 변경 내역 업데이트 (아래 체크리스트 참고)
+# 3. 태그 생성 및 푸시
 git tag v1.2.3
 git push origin v1.2.3
 
-# 3. GitHub Actions가 자동으로:
+# 4. GitHub Actions가 자동으로:
 #    - 3개 플랫폼 빌드
 #    - GitHub Release 생성
 #    - 에셋 업로드
 
-# 4. https://github.com/NewTurn2017/dramacode/releases 에서 확인
+# 5. https://github.com/NewTurn2017/dramacode/releases 에서 확인
 ```
+
+### 변경 내역 (Changelog) 업데이트 — 매 배포 시 필수
+
+배포 전에 반드시 아래 두 파일을 업데이트합니다:
+
+| 파일 | 용도 | 비고 |
+|------|------|------|
+| `packages/web/src/changelog.ts` | 앱 내 표시 (사이드바 "변경내역" 링크) | **소스 오브 트루스** — 배열 맨 앞에 새 항목 추가 |
+| `CHANGELOG.md` | GitHub 저장소 표시용 | changelog.ts와 동일 내용 유지 |
+
+**작성 규칙:**
+- 기능(features) 위주로 작성 — 사용자가 체감할 수 있는 변화만
+- 내부 리팩토링, 코드 정리 등 개발 사항은 생략
+- 각 항목은 "무엇을 할 수 있는지" 중심으로 한 줄 설명
+- 카테고리: `features` (새 기능), `improvements` (개선), `fixes` (수정)
 
 ### 버전 관리
 

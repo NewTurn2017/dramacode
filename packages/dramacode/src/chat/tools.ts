@@ -643,6 +643,42 @@ export function dramaTools(input: { session_id: string; drama_id?: string | null
       },
     }),
 
+    update_scene_image_prompt: tool({
+      description:
+        "장면의 이미지 프롬프트를 직접 수정합니다. 작가가 특정 장면의 이미지 프롬프트 내용, 스타일, 분위기 등을 변경해달라고 요청할 때 사용하세요. 에피소드 번호와 장면 번호로 장면을 찾습니다. prompt 필드에 전체 이미지 생성 프롬프트 문장을 넣으세요.",
+      inputSchema: z.object({
+        episode_number: z.number().int().positive().describe("에피소드 회차 번호"),
+        scene_number: z.number().int().positive().describe("장면 번호"),
+        prompt: z.string().min(1, VALIDATION_ERROR).describe("이미지 생성 프롬프트 (영문 권장, 구체적 장면 묘사)"),
+        style: z.string().optional().describe("스타일 (예: cinematic photorealistic, watercolor, anime). 생략 시 기존 값 유지"),
+        mood: z.string().optional().describe("분위기 (예: romantic, tense, mysterious, melancholic, cheerful, dramatic). 생략 시 기존 값 유지"),
+      }),
+      execute: async (params) => {
+        const did = requireDrama()
+        const ep = Episode.findByNumber(did, params.episode_number)
+        if (!ep) return `${params.episode_number}화를 찾을 수 없습니다.`
+        const scene = Scene.findByNumber(ep.id, params.scene_number)
+        if (!scene) return `${params.episode_number}화 S#${params.scene_number} 장면을 찾을 수 없습니다.`
+
+        const existing = scene.image_prompt
+        const updated = Scene.update(scene.id, {
+          image_prompt: {
+            prompt: params.prompt,
+            style: params.style ?? existing?.style ?? "cinematic photorealistic",
+            mood: params.mood ?? existing?.mood ?? "dramatic",
+            resolution: existing?.resolution ?? "1K",
+          },
+        })
+        EventBus.emit(did, "scene")
+        log.info("tool.update_scene_image_prompt", {
+          scene_id: scene.id,
+          episode: params.episode_number,
+          scene: params.scene_number,
+        })
+        return `${params.episode_number}화 S#${params.scene_number} 이미지 프롬프트가 수정되었습니다.\n프롬프트: ${updated.image_prompt?.prompt?.slice(0, 120)}...`
+      },
+    }),
+
     save_world: tool({
       description:
         "세계관 요소를 기록하거나 업데이트합니다. 같은 카테고리+이름이 이미 있으면 업데이트됩니다. 드라마의 배경, 문화, 규칙, 역사, 기술 등이 언급될 때 사용하세요.",

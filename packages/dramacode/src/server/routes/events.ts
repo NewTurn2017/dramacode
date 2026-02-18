@@ -35,26 +35,36 @@ export function EventRoutes() {
       start(controller) {
         controller.enqueue(encoder.encode("data: connected\n\n"))
 
-        const unsub = EventBus.subscribe(dramaId, (event) => {
+        let disposed = false
+        let ping: ReturnType<typeof setInterval> | undefined
+        let unsubscribe: (() => void) | undefined
+
+        const cleanup = () => {
+          if (disposed) return
+          disposed = true
+          unsubscribe?.()
+          clearInterval(ping)
+          try { controller.close() } catch {}
+        }
+
+        unsubscribe = EventBus.subscribe(dramaId, (event) => {
           try {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
-          } catch {}
+          } catch {
+            cleanup()
+          }
         })
 
-        const ping = setInterval(() => {
+        ping = setInterval(() => {
           try {
             controller.enqueue(encoder.encode(": ping\n\n"))
-          } catch {}
+          } catch {
+            cleanup()
+          }
         }, 15000)
 
         const signal = c.req.raw.signal as EventTarget
-        signal.addEventListener("abort", () => {
-          unsub()
-          clearInterval(ping)
-          try {
-            controller.close()
-          } catch {}
-        })
+        signal.addEventListener("abort", cleanup)
       },
     })
 

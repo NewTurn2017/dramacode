@@ -11,6 +11,7 @@ import { SessionRoutes } from "./routes/session"
 import { ChatRoutes } from "./routes/chat"
 import { DramaRoutes, EpisodeRoutes, SceneRoutes, CharacterImageRoutes, WorldRoutes, PlotPointRoutes, UploadsRoutes } from "./routes/drama"
 import { WriterRoutes } from "./routes/writer"
+import { ScrapRoutes } from "./routes/scrap"
 import { EventRoutes } from "./routes/events"
 import { NotFoundError } from "../storage/db"
 import { cleanupDuplicates } from "../chat/structured"
@@ -42,10 +43,15 @@ export namespace Server {
         .onError((err, c) => {
           log.error("failed", { error: String(err) })
           if (err instanceof NotFoundError) return c.json({ error: err.message }, 404)
+          if (err instanceof SyntaxError && err.message.includes("JSON")) {
+            return c.json({ error: "Invalid JSON body" }, 400)
+          }
           return c.json({ error: err instanceof Error ? err.message : String(err) }, 500)
         })
         .use(async (c, next) => {
-          log.info("request", { method: c.req.method, path: c.req.path })
+          const requestId = crypto.randomUUID().slice(0, 8)
+          c.header("X-Request-ID", requestId)
+          log.info("request", { method: c.req.method, path: c.req.path, requestId })
           await next()
         })
         .use(
@@ -69,6 +75,7 @@ export namespace Server {
         .route("/plot-point", PlotPointRoutes())
         .route("/uploads", UploadsRoutes())
         .route("/writer", WriterRoutes())
+        .route("/scrap", ScrapRoutes())
         .route("/events", EventRoutes())
         .put("/auth/:providerID", async (c) => {
           const providerID = c.req.param("providerID")

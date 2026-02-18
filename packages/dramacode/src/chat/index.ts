@@ -1,7 +1,10 @@
-import { streamText, generateText, stepCountIs, type LanguageModel, type ModelMessage } from "ai"
+import { streamText, generateText, stepCountIs, type LanguageModel, type ModelMessage, type ImagePart, type TextPart } from "ai"
 import { createOpenAI } from "@ai-sdk/openai"
 import { createAnthropic, type AnthropicProviderOptions } from "@ai-sdk/anthropic"
 import type { JSONObject } from "@ai-sdk/provider"
+import { ulid } from "ulid"
+import path from "path"
+import fs from "fs/promises"
 import { Auth, OAUTH_DUMMY_KEY } from "../auth"
 import { OpenAIAuth } from "../plugin/openai"
 import { AnthropicAuth } from "../plugin/anthropic"
@@ -9,6 +12,7 @@ import { DramaPrompt } from "./prompt"
 import { dramaTools, syncProjectTool } from "./tools"
 import { Session } from "../session"
 import { Drama } from "../drama"
+import { Global } from "../global"
 import { Log } from "../util/log"
 import { compactIfNeeded } from "./compaction"
 import { Rag } from "../rag"
@@ -17,8 +21,27 @@ import { AutosaveMetrics } from "./autosave-metrics"
 import { EventBus } from "../server/routes/events"
 
 const log = Log.create({ service: "chat" })
+const CHAT_IMAGES_DIR = path.join(Global.Path.data, "images", "chat")
 
 export type ProviderKind = "openai" | "anthropic"
+
+export type ChatImage = {
+  data: string
+  mediaType: string
+}
+
+async function saveChatImages(images: ChatImage[]): Promise<string[]> {
+  await fs.mkdir(CHAT_IMAGES_DIR, { recursive: true })
+  const filenames: string[] = []
+  for (const img of images) {
+    const ext = img.mediaType.split("/")[1] ?? "png"
+    const filename = `${ulid()}.${ext}`
+    const buf = Buffer.from(img.data, "base64")
+    await Bun.write(path.join(CHAT_IMAGES_DIR, filename), buf)
+    filenames.push(filename)
+  }
+  return filenames
+}
 
 type ResolvedProvider = {
   kind: ProviderKind
@@ -75,11 +98,23 @@ export namespace Chat {
     }
   }
 
-  function toModel(messages: Session.Message[]): ModelMessage[] {
-    return messages.map((m) => ({
-      role: m.role as "user" | "assistant" | "system",
-      content: m.content,
-    }))
+  function toModel(messages: Session.Message[], images?: ChatImage[]): ModelMessage[] {
+    return messages.map((m, i) => {
+      const isLastUser = i === messages.length - 1 && m.role === "user" && images?.length
+      if (isLastUser) {
+        const parts: (TextPart | ImagePart)[] = images.map((img) => ({
+          type: "image" as const,
+          image: img.data,
+          mediaType: img.mediaType,
+        }))
+        parts.push({ type: "text" as const, text: m.content })
+        return { role: "user" as const, content: parts }
+      }
+      return {
+        role: m.role as "user" | "assistant" | "system",
+        content: m.content,
+      }
+    })
   }
 
   async function compact(input: {
@@ -472,14 +507,17 @@ export namespace Chat {
     }
   }
 
-  export async function send(input: { session_id: string; content: string; model?: string; provider?: ProviderKind }) {
+  export async function send(input: { session_id: string; content: string; images?: ChatImage[]; model?: string; provider?: ProviderKind }) {
     const p = await resolveProvider(input.provider)
     const model = input.model ?? p.defaultModel
+
+    const savedFilenames = input.images?.length ? await saveChatImages(input.images) : undefined
 
     Session.addMessage({
       session_id: input.session_id,
       role: "user",
       content: input.content,
+      images: savedFilenames ? JSON.stringify(savedFilenames) : undefined,
     })
 
     const session = Session.get(input.session_id)
@@ -509,11 +547,12 @@ export namespace Chat {
       session_id: input.session_id,
       model,
       messages: history.length,
+      images: input.images?.length ?? 0,
     })
 
     const result = streamText({
       model: p.call(model),
-      messages: toModel(history),
+      messages: toModel(history, input.images),
       tools,
       stopWhen: stepCountIs(12),
       ...systemOpts(p.kind, system),
@@ -559,14 +598,17 @@ export namespace Chat {
     })
   }
 
-  export async function stream(input: { session_id: string; content: string; model?: string; provider?: ProviderKind }) {
+  export async function stream(input: { session_id: string; content: string; images?: ChatImage[]; model?: string; provider?: ProviderKind }) {
     const p = await resolveProvider(input.provider)
     const model = input.model ?? p.defaultModel
+
+    const savedFilenames = input.images?.length ? await saveChatImages(input.images) : undefined
 
     Session.addMessage({
       session_id: input.session_id,
       role: "user",
       content: input.content,
+      images: savedFilenames ? JSON.stringify(savedFilenames) : undefined,
     })
 
     const session = Session.get(input.session_id)
@@ -594,7 +636,7 @@ export namespace Chat {
 
     return streamText({
       model: p.call(model),
-      messages: toModel(history),
+      messages: toModel(history, input.images),
       tools,
       stopWhen: stepCountIs(12),
       ...systemOpts(p.kind, system),

@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import { stream } from "hono/streaming"
-import { Chat, type ProviderKind } from "../../chat"
+import { Chat, type ProviderKind, type ChatImage } from "../../chat"
 
 export function ChatRoutes() {
   return new Hono()
@@ -23,6 +23,7 @@ export function ChatRoutes() {
       const sessionID = c.req.param("sessionID")
       const body = await c.req.json<{
         content: string
+        images?: ChatImage[]
         model?: string
         provider?: ProviderKind
         drama_title?: string
@@ -34,6 +35,7 @@ export function ChatRoutes() {
       const result = await Chat.stream({
         session_id: sessionID,
         content: body.content,
+        images: body.images,
         model: body.model,
         provider: body.provider,
       })
@@ -57,6 +59,7 @@ export function ChatRoutes() {
       const sessionID = c.req.param("sessionID")
       const body = await c.req.json<{
         content: string
+        images?: ChatImage[]
         model?: string
         provider?: ProviderKind
         drama_title?: string
@@ -68,6 +71,7 @@ export function ChatRoutes() {
       const { message } = await Chat.send({
         session_id: sessionID,
         content: body.content,
+        images: body.images,
         model: body.model,
         provider: body.provider,
       })

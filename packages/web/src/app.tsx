@@ -1,10 +1,11 @@
-import { type ParentProps, createSignal, createResource, Show, onMount, onCleanup } from "solid-js"
+import { type ParentProps, createSignal, createResource, Show, For, onMount, onCleanup, createEffect } from "solid-js"
 import { A, useLocation } from "@solidjs/router"
 import { routes } from "./routes"
 import { api, type UpdateStatus, type UpdateProgress } from "./lib/api"
 import { AuthGuideModal } from "./components/auth-guide-modal"
-import { ToastProvider } from "./components/toast-provider"
+import { ToastProvider, showToast } from "./components/toast-provider"
 import { CommandPalette } from "./components/command-palette"
+import { changelog } from "./changelog"
 
 function OpenAIAuthSection(props: { providers: string[]; onUpdate: () => void }) {
   const [apiKeyInput, setApiKeyInput] = createSignal("")
@@ -12,6 +13,13 @@ function OpenAIAuthSection(props: { providers: string[]; onUpdate: () => void })
   const [loading, setLoading] = createSignal(false)
   const [deviceCode, setDeviceCode] = createSignal<{ url: string; userCode: string } | null>(null)
   const [showGuide, setShowGuide] = createSignal(false)
+  let pollRef: ReturnType<typeof setInterval> | undefined
+  let pollTimeoutRef: ReturnType<typeof setTimeout> | undefined
+
+  onCleanup(() => {
+    clearInterval(pollRef)
+    clearTimeout(pollTimeoutRef)
+  })
 
   const isLoggedIn = () => props.providers.includes("openai")
 
@@ -21,21 +29,22 @@ function OpenAIAuthSection(props: { providers: string[]; onUpdate: () => void })
       const { url, userCode } = await api.auth.login()
       setDeviceCode({ url, userCode })
       window.open(url, "_blank")
-      const poll = setInterval(async () => {
+      pollRef = setInterval(async () => {
         const status = await api.auth.status()
         if (status.providers.includes("openai")) {
-          clearInterval(poll)
+          clearInterval(pollRef)
           setDeviceCode(null)
           setLoading(false)
           props.onUpdate()
         }
       }, 3000)
-      setTimeout(() => {
-        clearInterval(poll)
+      pollTimeoutRef = setTimeout(() => {
+        clearInterval(pollRef)
         setDeviceCode(null)
         setLoading(false)
       }, 5 * 60 * 1000)
     } catch {
+      showToast.error("로그인 시작에 실패했습니다")
       setDeviceCode(null)
       setLoading(false)
     }
@@ -302,7 +311,9 @@ function ShutdownButton() {
     }
     try {
       await api.shutdown()
-    } catch {}
+    } catch {
+      showToast.error("서버 종료 요청 실패")
+    }
   }
 
   return (
@@ -339,9 +350,82 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
 }
 
+function ChangelogModal(props: { open: boolean; onClose: () => void }) {
+  let dialogRef: HTMLDivElement | undefined
+
+  createEffect(() => {
+    if (!props.open) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault()
+        props.onClose()
+      }
+    }
+    document.addEventListener("keydown", onKeyDown)
+    onCleanup(() => document.removeEventListener("keydown", onKeyDown))
+  })
+
+  return (
+    <Show when={props.open}>
+      <div class="fixed inset-0 z-50 flex items-center justify-center">
+        <div class="absolute inset-0 bg-black/60" onClick={props.onClose} />
+        <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="변경 내역"
+          class="relative bg-bg-card border border-border rounded-xl w-full max-w-md max-h-[70vh] shadow-2xl flex flex-col"
+        >
+          <div class="flex items-center justify-between px-5 py-3 border-b border-border">
+            <h3 class="text-sm font-semibold">변경 내역</h3>
+            <button onClick={props.onClose} class="text-text-dim hover:text-text text-lg leading-none">×</button>
+          </div>
+          <div class="overflow-y-auto px-5 py-4 space-y-5 text-sm text-left">
+            <For each={changelog}>
+              {(entry) => (
+                <div class="space-y-2">
+                  <div class="flex items-baseline gap-2">
+                    <span class="font-semibold text-accent">v{entry.version}</span>
+                    <span class="text-[11px] text-text-dim">{entry.date}</span>
+                  </div>
+                  <Show when={entry.features?.length}>
+                    <div>
+                      <p class="text-[11px] font-medium text-text-dim mb-1">새 기능</p>
+                      <ul class="space-y-1">
+                        <For each={entry.features}>{(f) => <li class="text-text-dim leading-snug">• {f}</li>}</For>
+                      </ul>
+                    </div>
+                  </Show>
+                  <Show when={entry.improvements?.length}>
+                    <div>
+                      <p class="text-[11px] font-medium text-text-dim mb-1">개선</p>
+                      <ul class="space-y-1">
+                        <For each={entry.improvements}>{(f) => <li class="text-text-dim leading-snug">• {f}</li>}</For>
+                      </ul>
+                    </div>
+                  </Show>
+                  <Show when={entry.fixes?.length}>
+                    <div>
+                      <p class="text-[11px] font-medium text-text-dim mb-1">수정</p>
+                      <ul class="space-y-1">
+                        <For each={entry.fixes}>{(f) => <li class="text-text-dim leading-snug">• {f}</li>}</For>
+                      </ul>
+                    </div>
+                  </Show>
+                </div>
+              )}
+            </For>
+          </div>
+        </div>
+      </div>
+    </Show>
+  )
+}
+
 function VersionBadge() {
   const [update, setUpdate] = createSignal<UpdateStatus | null>(null)
   const [progress, setProgress] = createSignal<UpdateProgress | null>(null)
+  const [showChangelog, setShowChangelog] = createSignal(false)
   const [countdown, setCountdown] = createSignal(0)
   let pollTimer: ReturnType<typeof setInterval> | undefined
   let countdownTimer: ReturnType<typeof setInterval> | undefined
@@ -442,7 +526,17 @@ function VersionBadge() {
       <Show when={!isActive()}>
         <Show
           when={update()?.hasUpdate}
-          fallback={<p class="text-[10px] text-text-dim">v{update()?.version ?? "0.1.0"}</p>}
+          fallback={
+            <p class="text-[10px] text-text-dim">
+              v{update()?.version ?? "0.1.0"}
+              <button
+                onClick={() => setShowChangelog(true)}
+                class="ml-1 text-accent/70 hover:text-accent underline underline-offset-2 transition-colors"
+              >
+                변경내역
+              </button>
+            </p>
+          }
         >
           <button
             onClick={handleStart}
@@ -452,6 +546,7 @@ function VersionBadge() {
           </button>
         </Show>
       </Show>
+      <ChangelogModal open={showChangelog()} onClose={() => setShowChangelog(false)} />
     </div>
   )
 }

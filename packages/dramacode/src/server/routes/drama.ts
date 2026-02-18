@@ -9,6 +9,8 @@ import { Chat } from "../../chat"
 import { Global } from "../../global"
 
 const IMAGES_DIR = path.join(Global.Path.data, "images", "characters")
+const CHAT_IMAGES_DIR = path.join(Global.Path.data, "images", "chat")
+const SCENE_IMAGES_DIR = path.join(Global.Path.data, "images", "scenes")
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"])
 const MAX_SIZE = 10 * 1024 * 1024
 
@@ -180,20 +182,49 @@ export function PlotPointRoutes() {
 }
 
 export function UploadsRoutes() {
-  return new Hono().get("/characters/:filename", async (c) => {
-    const filename = c.req.param("filename")
-    if (filename.includes("..") || filename.includes("/")) return c.notFound()
+  return new Hono()
+    .get("/characters/:filename", async (c) => {
+      const filename = c.req.param("filename")
+      if (filename.includes("..") || filename.includes("/")) return c.notFound()
 
-    const filePath = path.join(IMAGES_DIR, filename)
-    const file = Bun.file(filePath)
-    if (!(await file.exists())) return c.notFound()
+      const filePath = path.join(IMAGES_DIR, filename)
+      const file = Bun.file(filePath)
+      if (!(await file.exists())) return c.notFound()
 
-    return new Response(file, {
-      headers: {
-        "cache-control": "public, max-age=3600",
-      },
+      return new Response(file, {
+        headers: {
+          "cache-control": "public, max-age=3600",
+        },
+      })
     })
-  })
+    .get("/chat/:filename", async (c) => {
+      const filename = c.req.param("filename")
+      if (filename.includes("..") || filename.includes("/")) return c.notFound()
+
+      const filePath = path.join(CHAT_IMAGES_DIR, filename)
+      const file = Bun.file(filePath)
+      if (!(await file.exists())) return c.notFound()
+
+      return new Response(file, {
+        headers: {
+          "cache-control": "public, max-age=86400",
+        },
+      })
+    })
+    .get("/scenes/:filename", async (c) => {
+      const filename = c.req.param("filename")
+      if (filename.includes("..") || filename.includes("/")) return c.notFound()
+
+      const filePath = path.join(SCENE_IMAGES_DIR, filename)
+      const file = Bun.file(filePath)
+      if (!(await file.exists())) return c.notFound()
+
+      return new Response(file, {
+        headers: {
+          "cache-control": "public, max-age=3600",
+        },
+      })
+    })
 }
 
 export function EpisodeRoutes() {
@@ -272,6 +303,44 @@ export function SceneRoutes() {
     })
     .delete("/:id/characters/:characterID", (c) => {
       Scene.removeCharacter(c.req.param("id"), c.req.param("characterID"))
+      return c.json(true)
+    })
+    .post("/:id/image", async (c) => {
+      const id = c.req.param("id")
+      const scene = Scene.get(id)
+
+      const body = await c.req.parseBody()
+      const file = body["file"]
+      if (!(file instanceof File)) return c.json({ error: "file required" }, 400)
+      if (!ALLOWED_TYPES.has(file.type)) return c.json({ error: "unsupported image type" }, 400)
+      if (file.size > MAX_SIZE) return c.json({ error: "file too large (max 10MB)" }, 400)
+
+      const ext = file.name.split(".").pop() ?? "png"
+      const filename = `${id}.${ext}`
+
+      await fs.mkdir(SCENE_IMAGES_DIR, { recursive: true })
+
+      if (scene.image) {
+        const prev = path.join(SCENE_IMAGES_DIR, scene.image)
+        await fs.unlink(prev).catch(() => {})
+      }
+
+      const buf = await file.arrayBuffer()
+      await Bun.write(path.join(SCENE_IMAGES_DIR, filename), buf)
+
+      const updated = Scene.update(id, { image: filename })
+      return c.json(updated)
+    })
+    .delete("/:id/image", async (c) => {
+      const id = c.req.param("id")
+      const scene = Scene.get(id)
+
+      if (scene.image) {
+        const filePath = path.join(SCENE_IMAGES_DIR, scene.image)
+        await fs.unlink(filePath).catch(() => {})
+        Scene.update(id, { image: null })
+      }
+
       return c.json(true)
     })
 }

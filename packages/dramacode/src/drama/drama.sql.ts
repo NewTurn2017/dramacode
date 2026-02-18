@@ -43,6 +43,7 @@ export const SceneTable = sqliteTable(
     notes: text(),
     image_prompt: text({ mode: "json" }).$type<{ prompt: string; style: string; mood: string; resolution: string }>(),
     characters_present: text({ mode: "json" }).$type<string[]>(),
+    image: text(),
     ...Timestamps,
   },
   (table) => [index("scene_episode_idx").on(table.episode_id)],

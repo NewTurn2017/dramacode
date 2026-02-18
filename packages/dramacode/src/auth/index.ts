@@ -30,7 +30,11 @@ export namespace Auth {
 
   export async function all(): Promise<Record<string, Info>> {
     const file = Bun.file(filepath)
-    const data = await file.json().catch(() => ({}) as Record<string, unknown>)
+    const data = await file.json().catch((err: unknown) => {
+      if (err instanceof Error && err.message.includes("No such file")) return {} as Record<string, unknown>
+      console.error("[auth] Failed to read auth.json:", err)
+      return {} as Record<string, unknown>
+    })
     return Object.entries(data).reduce(
       (acc, [key, value]) => {
         const parsed = Info.safeParse(value)

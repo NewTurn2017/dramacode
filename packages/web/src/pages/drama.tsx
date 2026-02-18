@@ -1,7 +1,7 @@
 import { createSignal, createResource, createEffect, createMemo, For, Show, Switch, Match, onCleanup } from "solid-js"
 import { useParams, A } from "@solidjs/router"
 import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, createSortable, closestCenter, transformStyle } from "@thisbeyond/solid-dnd"
-import { api, characterImageUrl, type Session, type Scene, type ScenePrompt, type CharacterArc, type Character } from "@/lib/api"
+import { api, characterImageUrl, sceneImageUrl, type Session, type Scene, type ScenePrompt, type CharacterArc, type Character, type Scrap } from "@/lib/api"
 import { ChatPanel } from "@/components/chat-panel"
 import { ConfirmModal } from "@/components/confirm-modal"
 import { ThinkingIndicator } from "@/components/thinking"
@@ -109,6 +109,7 @@ export default function DramaDetail() {
   const [world, { refetch: refetchWorld }] = createResource(dramaId, api.drama.world)
   const [arcs, { refetch: refetchArcs }] = createResource(dramaId, api.drama.arcs)
   const [plotPoints, { refetch: refetchPlot }] = createResource(dramaId, api.drama.plotPoints)
+  const [scraps, { refetch: refetchScraps }] = createResource(dramaId, (id) => api.scrap.list(id))
 
 
   let sse: EventSource | undefined
@@ -214,6 +215,7 @@ export default function DramaDetail() {
   const [searchQuery, setSearchQuery] = createSignal("")
   const [activeEpId, setActiveEpId] = createSignal<string | null>(null)
   const [activeSceneId, setActiveSceneId] = createSignal<string | null>(null)
+  const [collapsedEpisodes, setCollapsedEpisodes] = createSignal<Set<string>>(new Set())
   const [exportOpen, setExportOpen] = createSignal(false)
 
   createEffect(() => {
@@ -417,6 +419,8 @@ export default function DramaDetail() {
   const [tabs, setTabs] = createSignal<OpenTab[]>([])
   const [active, setActive] = createSignal<string | null>(null)
   const [deleteTarget, setDeleteTarget] = createSignal<Session | null>(null)
+  const [deleteWorldTarget, setDeleteWorldTarget] = createSignal<{ id: string; name: string } | null>(null)
+  const [deletePlotTarget, setDeletePlotTarget] = createSignal<{ id: string; description: string } | null>(null)
 
   createEffect(() => {
     dramaId()
@@ -476,6 +480,58 @@ export default function DramaDetail() {
     refetchSessions()
   }
 
+  async function confirmDeleteWorld() {
+    const target = deleteWorldTarget()
+    if (!target) return
+    setDeleteWorldTarget(null)
+    await api.world.remove(target.id)
+    refetchWorld()
+    showToast.success("삭제됨")
+  }
+
+  async function confirmDeletePlot() {
+    const target = deletePlotTarget()
+    if (!target) return
+    setDeletePlotTarget(null)
+    await api.plotPoint.remove(target.id)
+    refetchPlot()
+    showToast.success("삭제됨")
+  }
+
+  async function handleScrap(content: string, sessionId: string) {
+    const id = dramaId()
+    if (!id) return
+    await api.scrap.create({ drama_id: id, content, source_session_id: sessionId })
+    refetchScraps()
+    showToast.success("스크랩 저장됨")
+  }
+
+  async function uploadSceneImage(sceneId: string, file: File) {
+    try {
+      await api.scene.uploadImage(sceneId, file)
+      refetchScenes()
+      showToast.success("이미지 업로드됨")
+    } catch (e: any) {
+      showToast.error(e.message ?? "업로드 실패")
+    }
+  }
+
+  async function removeSceneImage(sceneId: string) {
+    try {
+      await api.scene.removeImage(sceneId)
+      refetchScenes()
+      showToast.success("이미지 삭제됨")
+    } catch {
+      showToast.error("삭제 실패")
+    }
+  }
+
+  async function removeScrap(id: string) {
+    await api.scrap.remove(id)
+    refetchScraps()
+    showToast.success("삭제됨")
+  }
+
   function rename(sid: string, title: string) {
     setTabs((t) => t.map((tab) => (tab.id === sid ? { ...tab, label: title } : tab)))
     refetchSessions()
@@ -483,6 +539,15 @@ export default function DramaDetail() {
 
   function toggle(s: Section) {
     setExpanded((p) => ({ ...p, [s]: !p[s] }))
+  }
+
+  function toggleEpisode(episodeId: string) {
+    setCollapsedEpisodes((prev) => {
+      const next = new Set(prev)
+      if (next.has(episodeId)) next.delete(episodeId)
+      else next.add(episodeId)
+      return next
+    })
   }
 
   function count(key: Section) {
@@ -566,7 +631,8 @@ export default function DramaDetail() {
     try {
       await api.drama.uploadCharacterImage(characterId, file)
       refetchChars()
-    } catch {
+    } catch (err) {
+      showToast.error(err instanceof Error ? err.message : "이미지 업로드 실패")
     } finally {
       setUploading(null)
     }
@@ -583,7 +649,8 @@ export default function DramaDetail() {
       try {
         await api.drama.uploadCharacterImage(characterId, file)
         refetchChars()
-      } catch {
+      } catch (err) {
+        showToast.error(err instanceof Error ? err.message : "이미지 업로드 실패")
       } finally {
         setUploading(null)
       }
@@ -605,7 +672,8 @@ export default function DramaDetail() {
         const ep = eps.find((e) => e.id === sc.episode_id)
         groups.set(sc.episode_id, { number: ep?.number ?? 0, scenes: [] })
       }
-      groups.get(sc.episode_id)!.scenes.push(sc)
+      const group = groups.get(sc.episode_id)
+      if (group) group.scenes.push(sc)
     }
     return [...groups.entries()]
       .sort((a, b) => a[1].number - b[1].number)
@@ -1295,9 +1363,22 @@ export default function DramaDetail() {
                                 <For each={groupedScenes()}>
                                   {(group) => (
                                     <div class="space-y-2">
-                                      <p class="text-[10px] font-semibold text-text-dim uppercase tracking-wider px-1 pt-1">
-                                        에피소드 {group.number}화
-                                      </p>
+                                      <button
+                                        onClick={() => toggleEpisode(group.episodeId)}
+                                        class="w-full flex items-center gap-1.5 px-1 pt-1 text-left hover:bg-bg-hover/30 rounded transition-colors"
+                                      >
+                                        <span
+                                          class="text-[8px] transition-transform duration-150"
+                                          classList={{ "rotate-90": !collapsedEpisodes().has(group.episodeId) }}
+                                        >
+                                          ▶
+                                        </span>
+                                        <span class="text-[10px] font-semibold text-text-dim uppercase tracking-wider">
+                                          에피소드 {group.number}화
+                                        </span>
+                                        <span class="text-[9px] text-text-dim/50 ml-auto">{group.scenes.length}장면</span>
+                                      </button>
+                                      <Show when={!collapsedEpisodes().has(group.episodeId)}>
                                       <DragDropProvider
                                         onDragStart={({ draggable }) => setActiveSceneId(draggable.id as string)}
                                         onDragEnd={({ draggable, droppable }) => {
@@ -1455,6 +1536,40 @@ export default function DramaDetail() {
                                                       </For>
                                                     </div>
                                                   </Show>
+                                                  <Show when={sc.image}>
+                                                    {(img) => (
+                                                      <div class="mt-2 relative group/img">
+                                                        <img
+                                                          src={sceneImageUrl(img())}
+                                                          alt={`S#${sc.number} 이미지`}
+                                                          class="w-full rounded-md border border-border/50 object-cover max-h-40"
+                                                        />
+                                                        <button
+                                                          onClick={(e) => { e.stopPropagation(); removeSceneImage(sc.id) }}
+                                                          class="absolute top-1 right-1 text-[10px] px-1.5 py-0.5 rounded bg-bg/80 text-danger opacity-0 group-hover/img:opacity-100 transition-opacity"
+                                                        >
+                                                          ✕
+                                                        </button>
+                                                      </div>
+                                                    )}
+                                                  </Show>
+                                                  <div class="mt-2">
+                                                    <label
+                                                      class="text-[10px] px-2 py-1 rounded bg-bg-hover text-text-dim hover:text-text cursor-pointer transition-colors inline-block"
+                                                    >
+                                                      📷 이미지
+                                                      <input
+                                                        type="file"
+                                                        accept="image/jpeg,image/png,image/webp,image/gif"
+                                                        class="hidden"
+                                                        onChange={(e) => {
+                                                          const file = e.currentTarget.files?.[0]
+                                                          if (file) uploadSceneImage(sc.id, file)
+                                                          e.currentTarget.value = ""
+                                                        }}
+                                                      />
+                                                    </label>
+                                                  </div>
                                                 </div>
                                               )
                                             }}
@@ -1468,6 +1583,7 @@ export default function DramaDetail() {
                                           </Show>
                                         </DragOverlay>
                                       </DragDropProvider>
+                                      </Show>
                                     </div>
                                   )}
                                 </For>
@@ -1483,11 +1599,7 @@ export default function DramaDetail() {
                                   {(w) => (
                                     <div class="p-3 bg-bg-card border border-border/60 rounded-lg hover:border-border transition-colors group relative">
                                       <button
-                                        onClick={async () => {
-                                          await api.world.remove(w.id)
-                                          refetchWorld()
-                                          showToast.success("삭제됨")
-                                        }}
+                                        onClick={() => setDeleteWorldTarget({ id: w.id, name: w.name })}
                                         class="absolute top-2 right-2 text-text-dim/0 group-hover:text-text-dim/50 hover:!text-danger text-xs transition-colors"
                                       >
                                         ✕
@@ -1626,11 +1738,7 @@ export default function DramaDetail() {
                                               {pp.resolved ? "✓" : "○"}
                                             </button>
                                             <button
-                                              onClick={async () => {
-                                                await api.plotPoint.remove(pp.id)
-                                                refetchPlot()
-                                                showToast.success("삭제됨")
-                                              }}
+                                              onClick={() => setDeletePlotTarget({ id: pp.id, description: pp.description })}
                                               class="ml-auto text-text-dim/0 group-hover:text-text-dim/50 hover:!text-danger text-xs transition-colors"
                                             >
                                               ✕
@@ -1705,6 +1813,34 @@ export default function DramaDetail() {
                     </div>
                   </Show>
 
+                  <Show when={(scraps() ?? []).length > 0}>
+                    <div class="border-b border-border/50">
+                      <div class="px-4 py-2.5 flex items-center gap-2">
+                        <span class="text-sm font-medium">스크랩</span>
+                        <span class="text-[10px] text-text-dim">{(scraps() ?? []).length}</span>
+                      </div>
+                      <div class="px-3 pb-3 space-y-1.5">
+                        <For each={scraps()}>
+                          {(scrap) => (
+                            <div class="group px-2.5 py-2 rounded-md bg-bg-card/50 border border-border/50 hover:border-border transition-colors">
+                              <p class="text-xs text-text line-clamp-3 leading-relaxed whitespace-pre-wrap">{scrap.content}</p>
+                              <div class="flex items-center justify-between mt-1.5">
+                                <span class="text-[10px] text-text-dim">
+                                  {new Date(scrap.time_created).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })}
+                                </span>
+                                <button
+                                  onClick={() => removeScrap(scrap.id)}
+                                  class="text-[10px] text-text-dim/0 group-hover:text-text-dim/50 hover:!text-danger transition-colors"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                    </div>
+                  </Show>
 
                 </aside>
               </Show>
@@ -1818,6 +1954,7 @@ export default function DramaDetail() {
                               sessionId={tab.id}
                               visible={active() === tab.id}
                               onTitleChange={(title) => rename(tab.id, title)}
+                              onScrap={(content) => handleScrap(content, tab.id)}
                             />
                           </div>
                         )}
@@ -1837,6 +1974,20 @@ export default function DramaDetail() {
         message={`"${deleteTarget() ? sessionLabel(deleteTarget()!) : ""}" 대화를 삭제하시겠습니까?`}
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
+      />
+      <ConfirmModal
+        open={!!deleteWorldTarget()}
+        title="세계관 삭제"
+        message={`"${deleteWorldTarget()?.name ?? ""}" 항목을 삭제하시겠습니까?`}
+        onConfirm={confirmDeleteWorld}
+        onCancel={() => setDeleteWorldTarget(null)}
+      />
+      <ConfirmModal
+        open={!!deletePlotTarget()}
+        title="플롯 삭제"
+        message={`"${(deletePlotTarget()?.description ?? "").slice(0, 40)}…" 플롯을 삭제하시겠습니까?`}
+        onConfirm={confirmDeletePlot}
+        onCancel={() => setDeletePlotTarget(null)}
       />
     </div>
   )

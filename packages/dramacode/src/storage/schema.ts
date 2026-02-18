@@ -7,5 +7,7 @@ export {
   WorldTable,
   PlotPointTable,
   SceneCharacterTable,
+  CharacterArcTable,
 } from "../drama/drama.sql"
 export { WriterStyleTable } from "../writer/writer.sql"
+export { ScrapTable } from "../scrap/scrap.sql"

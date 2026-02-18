@@ -1,15 +1,30 @@
 const BASE = "/api"
 
+const TIMEOUT_MS = 30_000
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }))
-    throw new Error(body.error ?? res.statusText)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS)
+
+  try {
+    const res = await fetch(`${BASE}${path}`, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...init?.headers },
+      signal: init?.signal ?? controller.signal,
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }))
+      throw new Error(body.error ?? res.statusText)
+    }
+    return res.json()
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError" && !init?.signal) {
+      throw new Error("요청 시간이 초과되었습니다")
+    }
+    throw err
+  } finally {
+    clearTimeout(timeout)
   }
-  return res.json()
 }
 
 function get<T>(path: string) {
@@ -95,6 +110,7 @@ export type Scene = {
   notes: string | null
   image_prompt: ScenePrompt | null
   characters_present: string[] | null
+  image: string | null
   time_created: number
   time_updated: number
 }
@@ -137,6 +153,7 @@ export type Message = {
   session_id: string
   role: string
   content: string
+  images?: string | null
   time_created: number
 }
 
@@ -187,6 +204,21 @@ export type AutosaveResyncResult = {
   metrics: AutosaveStatus
 }
 
+export type ChatImage = {
+  data: string
+  mediaType: string
+}
+
+export type Scrap = {
+  id: string
+  drama_id: string
+  content: string
+  memo: string | null
+  source_session_id: string | null
+  time_created: number
+  time_updated: number
+}
+
 export type UpdateStatus = {
   version: string
   hasUpdate: boolean
@@ -203,6 +235,14 @@ export type UpdateProgress = {
 
 export function characterImageUrl(filename: string): string {
   return `${BASE}/uploads/characters/${filename}`
+}
+
+export function chatImageUrl(filename: string): string {
+  return `${BASE}/uploads/chat/${filename}`
+}
+
+export function sceneImageUrl(filename: string): string {
+  return `${BASE}/uploads/scenes/${filename}`
 }
 
 export const api = {
@@ -277,6 +317,20 @@ export const api = {
     remove: (id: string) => del(`/scene/${id}`),
     reorder: (id: string, number: number) =>
       patch<Scene>(`/scene/${id}/reorder`, { number }),
+    uploadImage: async (sceneId: string, file: File): Promise<Scene> => {
+      const form = new FormData()
+      form.append("file", file)
+      const res = await fetch(`${BASE}/scene/${sceneId}/image`, {
+        method: "POST",
+        body: form,
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error ?? res.statusText)
+      }
+      return res.json()
+    },
+    removeImage: (sceneId: string) => del(`/scene/${sceneId}/image`),
   },
   character: {
     get: (id: string) => get<Character>(`/character/${id}`),
@@ -307,11 +361,11 @@ export const api = {
     updateTitle: (id: string, title: string) => patch<Session>(`/session/${id}`, { title }),
   },
   chat: {
-    stream: (sessionId: string, content: string, signal?: AbortSignal, provider?: string) =>
+    stream: (sessionId: string, content: string, signal?: AbortSignal, provider?: string, images?: ChatImage[]) =>
       fetch(`${BASE}/chat/${sessionId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, provider }),
+        body: JSON.stringify({ content, provider, images }),
         signal,
       }),
     greet: (sessionId: string, signal?: AbortSignal, provider?: string) =>
@@ -323,6 +377,13 @@ export const api = {
       }),
     organize: (sessionId: string, provider?: string) =>
       post<{ status: string; stats?: Record<string, number> }>(`/chat/${sessionId}/organize`, { provider }),
+  },
+  scrap: {
+    list: (dramaId: string) => get<Scrap[]>(`/scrap?drama_id=${dramaId}`),
+    create: (body: { drama_id: string; content: string; memo?: string; source_session_id?: string }) =>
+      post<Scrap>("/scrap", body),
+    update: (id: string, body: { memo?: string }) => patch<Scrap>(`/scrap/${id}`, body),
+    remove: (id: string) => del(`/scrap/${id}`),
   },
   writer: {
     list: () => get<WriterStyle[]>("/writer"),
