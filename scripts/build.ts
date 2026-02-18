@@ -122,9 +122,35 @@ if (isDarwin) {
     cpSync(icnsSrc, path.join(resourcesDir, "AppIcon.icns"))
   }
 
-  const launcher = ["#!/bin/bash", 'DIR="$(cd "$(dirname "$0")" && pwd)"', 'exec "$DIR/dramacode" serve --open', ""].join(
-    "\n",
-  )
+  const launcher = `#!/bin/bash
+DIR="$(cd "$(dirname "$0")" && pwd)"
+LOG_DIR="$HOME/Library/Application Support/dramacode/log"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/launcher.log"
+
+echo "$(date): Starting DRAMACODE v${version}" >> "$LOG_FILE"
+
+if [ ! -x "$DIR/dramacode" ]; then
+  echo "$(date): ERROR: binary not found or not executable at $DIR/dramacode" >> "$LOG_FILE"
+  osascript -e 'display dialog "DRAMACODE 실행 파일을 찾을 수 없습니다.\\n\\n앱을 재설치해 주세요." buttons {"확인"} default button 1 with title "DRAMACODE" with icon stop'
+  exit 1
+fi
+
+"$DIR/dramacode" serve --open >> "$LOG_FILE" 2>&1 &
+SERVER_PID=$!
+
+sleep 2
+
+if ! kill -0 $SERVER_PID 2>/dev/null; then
+  EXIT_CODE=$(wait $SERVER_PID 2>/dev/null; echo $?)
+  echo "$(date): ERROR: server exited with code $EXIT_CODE" >> "$LOG_FILE"
+  osascript -e "display dialog \\"DRAMACODE가 시작에 실패했습니다.\\n\\n로그 파일 위치:\\n$LOG_DIR\\" buttons {\\"확인\\"} default button 1 with title \\"DRAMACODE\\" with icon stop"
+  exit 1
+fi
+
+echo "$(date): Server started (PID $SERVER_PID)" >> "$LOG_FILE"
+wait $SERVER_PID
+`
   writeFileSync(path.join(macosDir, "launcher"), launcher)
   await $`chmod +x ${path.join(macosDir, "launcher")} ${path.join(macosDir, "dramacode")}`.quiet()
 
