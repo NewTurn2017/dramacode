@@ -13,6 +13,17 @@ export interface ChangelogEntry {
  */
 export const changelog: ChangelogEntry[] = [
   {
+    version: "0.4.6",
+    date: "2026-02-18",
+    features: [
+      "장면 이미지 업로드 — 각 장면에 참고 이미지를 첨부하여 시각적으로 확인할 수 있습니다.",
+      "에피소드별 장면 접기 — 장면 섹션에서 에피소드를 접고 펼쳐 원하는 구간만 볼 수 있습니다.",
+    ],
+    improvements: [
+      "검색바 가시성 개선 — 채팅 검색 시 보라색 강조로 눈에 잘 띕니다.",
+    ],
+  },
+  {
     version: "0.4.5",
     date: "2026-02-18",
     features: [
