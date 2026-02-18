@@ -10,6 +10,11 @@ import { ArcChart } from "@/components/arc-chart"
 import { PlotTimeline } from "@/components/plot-timeline"
 import { showToast } from "@/components/toast-provider"
 import { SearchInput } from "@/components/search-input"
+import { Drawer } from "@/components/drawer"
+import { usePreferences } from "@/lib/preferences"
+import { AuthStatusDots } from "@/components/auth-status"
+import { SettingsDropdown } from "@/components/settings-dropdown"
+import { PanelsLeftIcon, MessageSquareIcon } from "@/components/lucide-icons"
 
 type OpenTab = { id: string; label: string }
 type Section = "characters" | "episodes" | "scenes" | "world" | "plot"
@@ -188,17 +193,20 @@ export default function DramaDetail() {
   })
 
   createEffect(() => {
-    if (!exportOpen()) return
     function handleClick(e: MouseEvent) {
       const target = e.target as HTMLElement
       if (!target.closest("[data-export-menu]")) {
         setExportOpen(false)
       }
     }
-    setTimeout(() => {
+    if (!exportOpen()) return
+    const timer = setTimeout(() => {
       document.addEventListener("click", handleClick)
     }, 0)
-    onCleanup(() => document.removeEventListener("click", handleClick))
+    onCleanup(() => {
+      clearTimeout(timer)
+      document.removeEventListener("click", handleClick)
+    })
   })
 
   const [expanded, setExpanded] = createSignal<Record<Section, boolean>>({
@@ -208,7 +216,11 @@ export default function DramaDetail() {
     world: false,
     plot: false,
   })
-  const [panelOpen, setPanelOpen] = createSignal(true)
+  const [prefs, updatePrefs] = usePreferences()
+  const [dataPanelOpen, setDataPanelOpen] = createSignal(true)
+  const [sessionPanelOpen, setSessionPanelOpen] = createSignal(
+    typeof window !== "undefined" && window.innerWidth < 768 ? false : prefs().sessionPanelOpen,
+  )
   const [flash, setFlash] = createSignal(false)
   const [editing, setEditing] = createSignal<{ id: string; field: string } | null>(null)
   const [editValue, setEditValue] = createSignal("")
@@ -223,10 +235,9 @@ export default function DramaDetail() {
     if (!id) return
 
     const handleNewSession = () => create()
-    const handleTogglePanel = () => setPanelOpen((p) => !p)
-    const handleExportFountain = () => {
-      window.open(`/api/drama/${id}/export/pdf`, "_blank")
-    }
+    const handleTogglePanel = () => setDataPanelOpen((p) => !p)
+    const handleToggleSessions = () => setSessionPanelOpen((p) => !p)
+    const handleExportFountain = () => downloadFountain()
     const handleToggleSection = (e: Event) => {
       const section = (e as CustomEvent<Section>).detail
       toggle(section)
@@ -234,12 +245,14 @@ export default function DramaDetail() {
 
     window.addEventListener("dramacode:new-session", handleNewSession)
     window.addEventListener("dramacode:toggle-panel", handleTogglePanel)
+    window.addEventListener("dramacode:toggle-sessions", handleToggleSessions)
     window.addEventListener("dramacode:export-fountain", handleExportFountain)
     window.addEventListener("dramacode:toggle-section", handleToggleSection)
 
     onCleanup(() => {
       window.removeEventListener("dramacode:new-session", handleNewSession)
       window.removeEventListener("dramacode:toggle-panel", handleTogglePanel)
+      window.removeEventListener("dramacode:toggle-sessions", handleToggleSessions)
       window.removeEventListener("dramacode:export-fountain", handleExportFountain)
       window.removeEventListener("dramacode:toggle-section", handleToggleSection)
     })
@@ -260,12 +273,20 @@ export default function DramaDetail() {
       }
       if ((e.metaKey || e.ctrlKey) && key === "b") {
         e.preventDefault()
-        setPanelOpen((p) => !p)
+        setDataPanelOpen((p) => !p)
+      }
+      if ((e.metaKey || e.ctrlKey) && key === "\\") {
+        e.preventDefault()
+        setSessionPanelOpen((p) => !p)
       }
     }
 
     window.addEventListener("keydown", handleKeyDown)
     onCleanup(() => window.removeEventListener("keydown", handleKeyDown))
+  })
+
+  createEffect(() => {
+    updatePrefs({ sessionPanelOpen: sessionPanelOpen() })
   })
 
   function exportPdf(episodeNumber?: number) {
@@ -701,17 +722,18 @@ export default function DramaDetail() {
       >
         {(d) => (
           <>
-            <header class="shrink-0 px-5 py-3 border-b border-border bg-bg flex items-center gap-4">
+            <header class="relative z-30 shrink-0 px-3 md:px-5 py-2 md:py-3 border-b border-border bg-bg flex items-center gap-2 md:gap-4 min-w-0 overflow-visible">
               <A href="/" class="text-sm text-text-dim hover:text-accent transition-colors shrink-0">
-                ← 대시보드
+                <span class="md:hidden">←</span>
+                <span class="hidden md:inline">← 대시보드</span>
               </A>
-              <div class="h-4 w-px bg-border" />
+              <div class="h-4 w-px bg-border hidden md:block" />
               <Show
                 when={isEditing("drama", "title")}
                 fallback={
                   <h1
                     onClick={() => startEdit("drama", "title", d().title)}
-                    class="text-base font-bold truncate cursor-pointer hover:bg-bg-hover/50 rounded px-1 -mx-1 transition-colors"
+                    class="text-sm md:text-base font-bold truncate cursor-pointer hover:bg-bg-hover/50 rounded px-1 -mx-1 transition-colors min-w-0"
                   >
                     {d().title}
                   </h1>
@@ -726,7 +748,7 @@ export default function DramaDetail() {
                     if (e.key === "Escape") cancelEdit()
                     if (e.key === "Enter") e.currentTarget.blur()
                   }}
-                  class="text-base font-bold w-full max-w-[24rem] px-1 -mx-1 bg-bg border border-accent/30 rounded focus:outline-none focus:border-accent"
+                  class="text-sm md:text-base font-bold w-full max-w-[24rem] px-1 -mx-1 bg-bg border border-accent/30 rounded focus:outline-none focus:border-accent"
                 />
               </Show>
               <Show
@@ -734,7 +756,7 @@ export default function DramaDetail() {
                 fallback={
                   <span
                     onClick={() => startEdit("drama", "genre", d().genre)}
-                    class="px-2 py-0.5 bg-accent/10 text-accent rounded text-xs shrink-0 cursor-pointer hover:bg-accent/20 transition-colors"
+                    class="hidden md:inline-flex px-2 py-0.5 bg-accent/10 text-accent rounded text-xs shrink-0 cursor-pointer hover:bg-accent/20 transition-colors"
                   >
                     {d().genre || "장르"}
                   </span>
@@ -749,7 +771,7 @@ export default function DramaDetail() {
                     if (e.key === "Escape") cancelEdit()
                     if (e.key === "Enter") e.currentTarget.blur()
                   }}
-                  class="w-24 px-1 -mx-1 bg-bg border border-accent/30 rounded text-xs focus:outline-none focus:border-accent"
+                  class="hidden md:block w-24 px-1 -mx-1 bg-bg border border-accent/30 rounded text-xs focus:outline-none focus:border-accent"
                 />
               </Show>
               <Show
@@ -757,7 +779,7 @@ export default function DramaDetail() {
                 fallback={
                   <span
                     onClick={() => startEdit("drama", "tone", d().tone)}
-                    class="px-2 py-0.5 bg-bg-hover text-text-dim rounded text-xs shrink-0 cursor-pointer hover:bg-bg-hover/80 transition-colors"
+                    class="hidden md:inline-flex px-2 py-0.5 bg-bg-hover text-text-dim rounded text-xs shrink-0 cursor-pointer hover:bg-bg-hover/80 transition-colors"
                   >
                     {d().tone || "톤"}
                   </span>
@@ -772,7 +794,7 @@ export default function DramaDetail() {
                     if (e.key === "Escape") cancelEdit()
                     if (e.key === "Enter") e.currentTarget.blur()
                   }}
-                  class="w-24 px-1 -mx-1 bg-bg border border-accent/30 rounded text-xs focus:outline-none focus:border-accent"
+                  class="hidden md:block w-24 px-1 -mx-1 bg-bg border border-accent/30 rounded text-xs focus:outline-none focus:border-accent"
                 />
               </Show>
               <Show
@@ -780,7 +802,7 @@ export default function DramaDetail() {
                 fallback={
                   <span
                     onClick={() => startEdit("drama", "logline", d().logline)}
-                    class="text-sm text-text-dim truncate ml-auto cursor-pointer hover:bg-bg-hover/50 rounded px-1 -mx-1 transition-colors"
+                    class="hidden lg:inline text-sm text-text-dim truncate ml-auto cursor-pointer hover:bg-bg-hover/50 rounded px-1 -mx-1 transition-colors"
                   >
                     {d().logline || "로그라인"}
                   </span>
@@ -795,10 +817,10 @@ export default function DramaDetail() {
                     if (e.key === "Escape") cancelEdit()
                     if (e.key === "Enter") e.currentTarget.blur()
                   }}
-                  class="text-sm text-text-dim w-full max-w-[24rem] ml-auto px-1 -mx-1 bg-bg border border-accent/30 rounded focus:outline-none focus:border-accent"
+                  class="hidden lg:block text-sm text-text-dim w-full max-w-[24rem] ml-auto px-1 -mx-1 bg-bg border border-accent/30 rounded focus:outline-none focus:border-accent"
                 />
               </Show>
-              <div class="ml-auto shrink-0 relative" data-export-menu>
+              <div class="ml-auto shrink-0 relative hidden md:block" data-export-menu>
                 <button
                   onClick={() => setExportOpen((p) => !p)}
                   class="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-text-dim hover:text-accent hover:border-accent transition-colors"
@@ -837,34 +859,189 @@ export default function DramaDetail() {
                   </div>
                 </Show>
               </div>
+              <div class="flex items-center gap-1 shrink-0">
+                <div class="relative group">
+                  <button
+                    onClick={() => setDataPanelOpen((p) => !p)}
+                    class="w-8 h-8 flex items-center justify-center rounded-md border border-border text-text-dim hover:text-accent hover:border-accent transition-colors"
+                    classList={{ "bg-accent/10 text-accent border-accent/30": dataPanelOpen() }}
+                    aria-label="프로젝트 데이터"
+                  >
+                    <PanelsLeftIcon class="w-4 h-4" />
+                  </button>
+                  <span class="pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap px-2 py-1 rounded bg-bg-card border border-border text-[10px] text-text opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-75 z-30">
+                    프로젝트 데이터 (⌘B)
+                  </span>
+                </div>
+                <div class="relative group">
+                  <button
+                    onClick={() => setSessionPanelOpen((p) => !p)}
+                    class="w-8 h-8 flex items-center justify-center rounded-md border border-border text-text-dim hover:text-accent hover:border-accent transition-colors"
+                    classList={{ "bg-accent/10 text-accent border-accent/30": sessionPanelOpen() }}
+                    aria-label="세션 목록"
+                  >
+                    <MessageSquareIcon class="w-4 h-4" />
+                  </button>
+                  <span class="pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap px-2 py-1 rounded bg-bg-card border border-border text-[10px] text-text opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-75 z-30">
+                    세션 목록 (⌘\)
+                  </span>
+                </div>
+              </div>
+              <div class="hidden sm:block shrink-0">
+                <AuthStatusDots />
+              </div>
+              <SettingsDropdown />
             </header>
 
             <div class="flex flex-1 min-h-0">
-              <Show when={panelOpen()}>
-                <aside
-                  class="w-[28rem] shrink-0 border-r bg-bg overflow-y-auto"
-                  classList={{
-                    "border-border": !flash(),
-                    "border-accent/40": flash(),
-                  }}
-                  style={{
-                    "box-shadow": flash() ? "inset -2px 0 12px rgba(124,106,240,0.12)" : "none",
-                    transition: "box-shadow 0.4s ease-out, border-color 0.4s ease-out",
-                  }}
-                >
-                  <div class="p-3 flex items-center justify-between border-b border-border">
-                    <span class="text-[10px] font-semibold text-text-dim uppercase tracking-widest">
-                      프로젝트 데이터
-                    </span>
-                    <button
-                      onClick={() => setPanelOpen(false)}
-                      class="text-text-dim hover:text-text text-xs transition-colors"
-                      title="패널 닫기"
-                    >
-                      ◁
-                    </button>
-                  </div>
+              <div class="flex-1 flex min-w-0">
+                <Show when={sessionPanelOpen()}>
+                  <aside class="w-52 shrink-0 border-r border-border bg-bg flex flex-col">
+                    <div class="p-2.5 border-b border-border flex items-center justify-between">
+                      <button
+                        onClick={create}
+                        class="flex-1 px-3 py-1.5 bg-accent text-white text-xs rounded-md hover:bg-accent-hover transition-colors"
+                      >
+                        + 새 대화
+                      </button>
+                      <button
+                        onClick={() => setSessionPanelOpen(false)}
+                        class="ml-2 text-text-dim hover:text-text text-xs transition-colors shrink-0"
+                        title="패널 닫기"
+                      >
+                        ◁
+                      </button>
+                    </div>
+                    <div class="flex-1 overflow-auto p-1.5 space-y-0.5">
+                      <For each={sessions()}>
+                        {(s) => (
+                          <div
+                            class="flex items-center group rounded-md transition-colors"
+                            classList={{
+                              "bg-bg-hover": active() === s.id,
+                              "hover:bg-bg-hover": active() !== s.id,
+                            }}
+                          >
+                            <button
+                              onClick={() => openSession(s)}
+                              class="flex-1 text-left px-2.5 py-1.5 text-xs truncate"
+                              classList={{
+                                "text-accent": tabs().some((t) => t.id === s.id),
+                                "text-text-dim hover:text-text": !tabs().some((t) => t.id === s.id),
+                              }}
+                            >
+                              {sessionLabel(s)}
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setDeleteTarget(s)
+                              }}
+                              class="p-0.5 mr-1 text-text-dim hover:text-danger opacity-0 group-hover:opacity-100 transition-all shrink-0 text-[10px]"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                  </aside>
+                </Show>
 
+                <div class="flex-1 flex flex-col min-w-0">
+                  <Show when={tabs().length > 0}>
+                    <div class="flex items-center border-b border-border bg-bg overflow-x-auto shrink-0">
+                      <Show when={!sessionPanelOpen()}>
+                        <button
+                          onClick={() => setSessionPanelOpen(true)}
+                          class="px-2 py-2 text-text-dim hover:text-text border-r border-border shrink-0 text-xs transition-colors"
+                          title="세션 목록 열기"
+                        >
+                          ▷
+                        </button>
+                      </Show>
+                      <For each={tabs()}>
+                        {(tab) => (
+                          <div
+                            class="flex items-center gap-1 px-3 py-1.5 border-r border-border cursor-pointer text-xs shrink-0 max-w-[160px] transition-colors"
+                            classList={{
+                              "bg-bg-card text-text": active() === tab.id,
+                              "text-text-dim hover:bg-bg-hover hover:text-text": active() !== tab.id,
+                            }}
+                          >
+                            <button onClick={() => setActive(tab.id)} class="truncate flex-1 text-left">
+                              {tab.label}
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                closeTab(tab.id)
+                              }}
+                              class="text-text-dim hover:text-danger text-[10px] shrink-0 ml-1"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+
+                  <Show
+                    when={tabs().length > 0}
+                    fallback={
+                      <div class="flex-1 flex items-center justify-center">
+                        <div class="text-center space-y-3">
+                          <p class="text-text-dim text-sm">새 대화를 시작하거나 기존 세션을 선택하세요</p>
+                          <Show when={!sessionPanelOpen()}>
+                            <button
+                              onClick={() => setSessionPanelOpen(true)}
+                              class="px-3 py-1.5 text-xs rounded-md border border-border text-text-dim hover:text-text hover:bg-bg-hover transition-colors"
+                            >
+                              세션 목록 열기
+                            </button>
+                          </Show>
+                        </div>
+                      </div>
+                    }
+                  >
+                    <div class="flex-1 relative min-h-0">
+                      <For each={tabs()}>
+                        {(tab) => (
+                          <div
+                            class="absolute inset-0"
+                            style={{
+                              "z-index": active() === tab.id ? 1 : 0,
+                              visibility: active() === tab.id ? "visible" : "hidden",
+                            }}
+                          >
+                            <ChatPanel
+                              sessionId={tab.id}
+                              visible={active() === tab.id}
+                              onTitleChange={(title) => rename(tab.id, title)}
+                              onScrap={(content) => handleScrap(content, tab.id)}
+                            />
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                </div>
+              </div>
+            </div>
+
+            <Drawer
+              open={dataPanelOpen()}
+              onClose={() => setDataPanelOpen(false)}
+              side={prefs().dataPanelSide}
+              width="28rem"
+              title="프로젝트 데이터"
+            >
+              <div
+                class="h-full overflow-y-auto"
+                classList={{ "ring-1 ring-accent/30": flash() }}
+                style={{ transition: "box-shadow 0.4s ease-out, border-color 0.4s ease-out" }}
+              >
                   <div class="px-3 pt-2 pb-1">
                     <SearchInput
                       value={searchQuery()}
@@ -1842,128 +2019,8 @@ export default function DramaDetail() {
                     </div>
                   </Show>
 
-                </aside>
-              </Show>
-
-              <Show when={!panelOpen()}>
-                <button
-                  onClick={() => setPanelOpen(true)}
-                  class="shrink-0 w-8 border-r border-border flex items-center justify-center hover:bg-bg-hover transition-colors text-text-dim hover:text-text"
-                  title="패널 열기"
-                >
-                  ▷
-                </button>
-              </Show>
-
-              <div class="flex-1 flex min-w-0">
-                <aside class="w-40 shrink-0 border-r border-border bg-bg flex flex-col">
-                  <div class="p-2.5 border-b border-border">
-                    <button
-                      onClick={create}
-                      class="w-full px-3 py-1.5 bg-accent text-white text-xs rounded-md hover:bg-accent-hover transition-colors"
-                    >
-                      + 새 대화
-                    </button>
-                  </div>
-                  <div class="flex-1 overflow-auto p-1.5 space-y-0.5">
-                    <For each={sessions()}>
-                      {(s) => (
-                        <div
-                          class="flex items-center group rounded-md transition-colors"
-                          classList={{
-                            "bg-bg-hover": active() === s.id,
-                            "hover:bg-bg-hover": active() !== s.id,
-                          }}
-                        >
-                          <button
-                            onClick={() => openSession(s)}
-                            class="flex-1 text-left px-2.5 py-1.5 text-xs truncate"
-                            classList={{
-                              "text-accent": tabs().some((t) => t.id === s.id),
-                              "text-text-dim hover:text-text": !tabs().some((t) => t.id === s.id),
-                            }}
-                          >
-                            {sessionLabel(s)}
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setDeleteTarget(s)
-                            }}
-                            class="p-0.5 mr-1 text-text-dim hover:text-danger opacity-0 group-hover:opacity-100 transition-all shrink-0 text-[10px]"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      )}
-                    </For>
-                  </div>
-                </aside>
-
-                <div class="flex-1 flex flex-col min-w-0">
-                  <Show when={tabs().length > 0}>
-                    <div class="flex items-center border-b border-border bg-bg overflow-x-auto shrink-0">
-                      <For each={tabs()}>
-                        {(tab) => (
-                          <div
-                            class="flex items-center gap-1 px-3 py-1.5 border-r border-border cursor-pointer text-xs shrink-0 max-w-[160px] transition-colors"
-                            classList={{
-                              "bg-bg-card text-text": active() === tab.id,
-                              "text-text-dim hover:bg-bg-hover hover:text-text": active() !== tab.id,
-                            }}
-                          >
-                            <button onClick={() => setActive(tab.id)} class="truncate flex-1 text-left">
-                              {tab.label}
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                closeTab(tab.id)
-                              }}
-                              class="text-text-dim hover:text-danger text-[10px] shrink-0 ml-1"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        )}
-                      </For>
-                    </div>
-                  </Show>
-
-                  <Show
-                    when={tabs().length > 0}
-                    fallback={
-                      <div class="flex-1 flex items-center justify-center">
-                        <div class="text-center">
-                          <p class="text-text-dim text-sm">새 대화를 시작하거나 기존 세션을 선택하세요</p>
-                        </div>
-                      </div>
-                    }
-                  >
-                    <div class="flex-1 relative min-h-0">
-                      <For each={tabs()}>
-                        {(tab) => (
-                          <div
-                            class="absolute inset-0"
-                            style={{
-                              "z-index": active() === tab.id ? 1 : 0,
-                              visibility: active() === tab.id ? "visible" : "hidden",
-                            }}
-                          >
-                            <ChatPanel
-                              sessionId={tab.id}
-                              visible={active() === tab.id}
-                              onTitleChange={(title) => rename(tab.id, title)}
-                              onScrap={(content) => handleScrap(content, tab.id)}
-                            />
-                          </div>
-                        )}
-                      </For>
-                    </div>
-                  </Show>
-                </div>
               </div>
-            </div>
+            </Drawer>
           </>
         )}
       </Show>
