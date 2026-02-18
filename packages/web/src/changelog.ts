@@ -13,7 +13,7 @@ export interface ChangelogEntry {
  */
 export const changelog: ChangelogEntry[] = [
   {
-    version: "0.5.1",
+    version: "0.5.2",
     date: "2026-02-18",
     features: [
       "퍼블릭 URL 공유 — 헤더의 🌐 버튼 하나로 Cloudflare 터널을 시작하면 외부에서 접속 가능한 HTTPS URL이 생성됩니다.",
