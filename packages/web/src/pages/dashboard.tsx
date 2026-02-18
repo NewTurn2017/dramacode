@@ -68,7 +68,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div class="p-6 max-w-4xl mx-auto">
+    <div class="px-4 py-5 sm:p-6 max-w-4xl mx-auto">
       <div class="flex items-center justify-between mb-6">
         <h2 class="text-xl font-bold">드라마 프로젝트</h2>
       </div>
@@ -122,7 +122,7 @@ export default function Dashboard() {
       <div class="grid gap-3">
         <For each={filteredDramas()}>
           {(drama) => (
-            <div class="flex items-center gap-4 p-4 bg-bg-card border border-border rounded-lg hover:border-accent/40 transition-colors group overflow-hidden">
+              <div class="flex items-center gap-3 sm:gap-4 p-3 sm:p-4 bg-bg-card border border-border rounded-lg hover:border-accent/40 transition-colors group overflow-hidden">
               <A href={`/drama/${drama.id}`} class="flex-1 min-w-0">
                 <h3 class="font-medium truncate group-hover:text-accent transition-colors">{drama.title}</h3>
                 <div class="flex items-center gap-3 mt-1 text-xs text-text-dim truncate">

@@ -33,7 +33,7 @@ export default function WriterPage() {
   }
 
   return (
-    <div class="p-6 max-w-4xl mx-auto">
+    <div class="px-4 py-5 sm:p-6 max-w-4xl mx-auto">
       <div class="mb-6">
         <h2 class="text-xl font-bold">작가 프로필</h2>
         <p class="text-sm text-text-dim mt-1">AI가 대화 중 관찰한 창작 스타일과 선호도입니다</p>
