@@ -91,6 +91,9 @@ if (existsSync(zipPath)) console.log(`  ${zipName}`)
 
 // 2) macOS DMG — .app bundle for drag-to-Applications install
 if (isDarwin) {
+  rmSync(path.join(root, "node_modules"), { recursive: true, force: true })
+  rmSync(path.join(root, "packages/web/dist"), { recursive: true, force: true })
+  rmSync(path.join(root, "packages/web/node_modules"), { recursive: true, force: true })
   const dmgName = `DRAMACODE-mac-${targetArch}.dmg`
   const dmgPath = path.join(root, dmgName)
   const tmpApp = path.join(root, ".tmp-app")
