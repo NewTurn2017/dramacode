@@ -100,12 +100,16 @@ export namespace Rag {
 
   export function init() {
     const sqlite = Database.sqlite()
-    sqlite.run(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS embedding USING vec0(
-        entity_id TEXT PRIMARY KEY,
-        embedding float[512]
-      )
-    `)
+    if (Database.vecEnabled()) {
+      sqlite.run(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS embedding USING vec0(
+          entity_id TEXT PRIMARY KEY,
+          embedding float[512]
+        )
+      `)
+    } else {
+      log.warn("rag.init: vec0 not available, vector search disabled")
+    }
     sqlite.run(`
       CREATE TABLE IF NOT EXISTS embedding_meta (
         entity_id TEXT PRIMARY KEY,
@@ -117,7 +121,7 @@ export namespace Rag {
     `)
     sqlite.run(`CREATE INDEX IF NOT EXISTS embedding_meta_drama_idx ON embedding_meta(drama_id)`)
     sqlite.run(`CREATE INDEX IF NOT EXISTS embedding_meta_type_idx ON embedding_meta(entity_type)`)
-    log.info("rag.init")
+    log.info("rag.init", { vec: Database.vecEnabled() })
   }
 
   export async function embed(input: string): Promise<Float32Array> {
@@ -127,6 +131,7 @@ export namespace Rag {
   }
 
   export async function index(input: { entity_id: string; entity_type: string; drama_id: string; content: string }) {
+    if (!Database.vecEnabled()) return
     const out = await vector(input.content)
     if (!out) return
     const sqlite = Database.sqlite()
@@ -144,12 +149,15 @@ export namespace Rag {
 
   export function remove(entity_id: string) {
     const sqlite = Database.sqlite()
-    sqlite.run(`DELETE FROM embedding WHERE entity_id = ?`, [entity_id])
+    if (Database.vecEnabled()) {
+      sqlite.run(`DELETE FROM embedding WHERE entity_id = ?`, [entity_id])
+    }
     sqlite.run(`DELETE FROM embedding_meta WHERE entity_id = ?`, [entity_id])
     log.info("rag.remove", { entity_id })
   }
 
   export async function indexDrama(drama_id: string) {
+    if (!Database.vecEnabled()) return
     const openai = await provider()
     if (!openai) {
       log.warn("rag.index_drama.skipped.auth", { drama_id })
@@ -230,6 +238,7 @@ export namespace Rag {
     limit?: number
     types?: string[]
   }): Promise<Row[]> {
+    if (!Database.vecEnabled()) return []
     const limit = input.limit ?? 5
     const k = Math.max(limit * 2, limit)
     const out = await vector(input.query)

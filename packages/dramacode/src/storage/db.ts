@@ -32,6 +32,11 @@ export namespace Database {
 
   type Journal = { sql: string; timestamp: number }[]
   let raw: BunDatabase | undefined
+  let _vecLoaded = false
+
+  export function vecEnabled() {
+    return _vecLoaded
+  }
 
   function vecExtName() {
     if (process.platform === "win32") return "vec0.dll"
@@ -43,6 +48,7 @@ export namespace Database {
     try {
       const mod = require("sqlite-vec")
       mod.load(db)
+      _vecLoaded = true
       log.info("sqlite-vec loaded via npm")
       return
     } catch {}
@@ -55,8 +61,10 @@ export namespace Database {
       path.join(import.meta.dirname, name),
     ]
     for (const file of candidates) {
+      if (!existsSync(file)) continue
       try {
         db.loadExtension(file.replace(/\.[^.]+$/, ""))
+        _vecLoaded = true
         log.info("sqlite-vec loaded", { file })
         return
       } catch {

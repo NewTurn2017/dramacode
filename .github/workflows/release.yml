@@ -41,7 +41,15 @@ jobs:
           VEC_OS="${VEC_OS%-*}"
           VEC_ARCH="${TARGET##*-}"
           if [ "$VEC_OS" = "win32" ]; then VEC_OS="windows"; fi
-          bun add "sqlite-vec-${VEC_OS}-${VEC_ARCH}" --no-save 2>/dev/null || true
+          PKG="sqlite-vec-${VEC_OS}-${VEC_ARCH}"
+          # npm extracts all platforms; bun skips non-native arch
+          npm pack "${PKG}@0.1.7-alpha.2" 2>/dev/null && \
+            tar xzf ${PKG}-*.tgz && \
+            mkdir -p "node_modules/${PKG}" && \
+            cp package/* "node_modules/${PKG}/" && \
+            rm -rf package ${PKG}-*.tgz && \
+            echo "Extracted ${PKG}" || \
+            echo "Warning: ${PKG} not available"
         shell: bash
 
       - name: Build
