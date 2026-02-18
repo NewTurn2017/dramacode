@@ -94,6 +94,11 @@ if (isDarwin) {
   rmSync(path.join(root, "node_modules"), { recursive: true, force: true })
   rmSync(path.join(root, "packages/web/dist"), { recursive: true, force: true })
   rmSync(path.join(root, "packages/web/node_modules"), { recursive: true, force: true })
+  rmSync(path.join(root, "packages/dramacode/node_modules"), { recursive: true, force: true })
+  if (process.env.CI) {
+    const bunCache = path.join(process.env.HOME ?? "~", ".bun")
+    rmSync(bunCache, { recursive: true, force: true })
+  }
   const dmgName = `DRAMACODE-mac-${targetArch}.dmg`
   const dmgPath = path.join(root, dmgName)
   const tmpApp = path.join(root, ".tmp-app")

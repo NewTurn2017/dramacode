@@ -52,6 +52,18 @@ jobs:
             echo "Warning: ${PKG} not available"
         shell: bash
 
+      - name: Free disk space (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          df -h /
+          rm -rf ~/Library/Android 2>/dev/null || true
+          rm -rf ~/Library/Developer/CoreSimulator 2>/dev/null || true
+          rm -rf /usr/local/lib/node_modules 2>/dev/null || true
+          rm -rf /usr/local/share/powershell 2>/dev/null || true
+          rm -rf /usr/local/share/chromium 2>/dev/null || true
+          rm -rf /usr/local/lib/python* 2>/dev/null || true
+          df -h /
+
       - name: Build
         run: bun run scripts/build.ts ${{ matrix.target }}
         env:
