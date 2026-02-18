@@ -1,7 +1,17 @@
-import { Tunnel, bin, install } from "cloudflared"
+import { Tunnel, install, use } from "cloudflared"
+import { homedir } from "os"
+import path from "path"
 import { Log } from "../util/log"
 
 const log = Log.create({ service: "tunnel" })
+
+/** Resolve cloudflared binary to a user-writable path (survives packaging). */
+const CLOUDFLARED_BIN = path.join(
+  homedir(),
+  ".cloudflared",
+  "bin",
+  process.platform === "win32" ? "cloudflared.exe" : "cloudflared",
+)
 
 export type TunnelStatus = {
   state: "idle" | "installing" | "connecting" | "connected" | "error"
@@ -18,15 +28,19 @@ function setStatus(patch: Partial<TunnelStatus>) {
 
 async function ensureBinary(): Promise<boolean> {
   try {
-    const proc = Bun.spawnSync([bin, "--version"])
-    if (proc.exitCode === 0) return true
+    const proc = Bun.spawnSync([CLOUDFLARED_BIN, "--version"])
+    if (proc.exitCode === 0) {
+      use(CLOUDFLARED_BIN)
+      return true
+    }
   } catch {}
 
   log.info("cloudflared binary not found, installing…")
   setStatus({ state: "installing", error: null })
   try {
-    await install(bin)
-    log.info("cloudflared installed", { path: bin })
+    await install(CLOUDFLARED_BIN)
+    use(CLOUDFLARED_BIN)
+    log.info("cloudflared installed", { path: CLOUDFLARED_BIN })
     return true
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
