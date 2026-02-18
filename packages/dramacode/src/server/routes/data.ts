@@ -6,6 +6,7 @@ import os from "os"
 import { Global } from "../../global"
 import { Database } from "../../storage/db"
 import { Log } from "../../util/log"
+import { Updater } from "../../update"
 
 const log = Log.create({ service: "data" })
 
@@ -139,10 +140,7 @@ export function DataRoutes() {
 
         log.info("data imported, restarting")
 
-        setTimeout(() => {
-          const { Updater } = require("../../update") as typeof import("../../update")
-          Updater.restart()
-        }, 1500)
+        setTimeout(() => Updater.restart(), 1500)
 
         return c.json({ ok: true, message: "데이터를 불러왔습니다. 앱이 재시작됩니다." })
       } catch (err) {
